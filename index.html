@@ -189,6 +189,24 @@
     background:rgba(255,255,255,.88); color:#a06a8c; padding:9px 20px; border-radius:999px;
     font-weight:700; font-size:15px; pointer-events:none;
     animation:hintBob 1.4s ease-in-out infinite; transition:opacity .5s; }
+
+  /* ---------- save modal ---------- */
+  #saveModal { position:fixed; inset:0; z-index:50; background:rgba(100,60,130,.72);
+    display:flex; align-items:center; justify-content:center; padding:18px; }
+  #saveModal.hidden { display:none !important; }
+  #saveBox { background:#fff8ff; border-radius:24px; padding:22px 20px 18px;
+    width:min(420px,96vw); box-shadow:0 10px 40px rgba(120,60,160,.35);
+    display:flex; flex-direction:column; gap:10px; max-height:92vh; overflow-y:auto; }
+  #saveBox h2 { font-family:'Baloo 2',sans-serif; font-size:22px; color:#7a4f6d;
+    font-weight:800; text-align:center; margin:0; }
+  #saveBox p { font-size:13px; color:#8a6a8a; margin:0; line-height:1.4; }
+  #saveBox textarea { width:100%; height:80px; border-radius:12px; border:2px solid #e0b0d8;
+    padding:8px; font-size:12px; font-family:monospace; color:#5a3a6a; resize:none;
+    background:#fff; outline:none; }
+  #saveBox textarea:focus { border-color:#b070d0; }
+  #saveBox .saveDivider { border:none; border-top:2px dashed #e0b0d8; margin:2px 0; }
+  #saveBox .saveRow { display:flex; gap:8px; }
+  #saveBox .saveRow .btn { flex:1; margin:0; font-size:14px; padding:10px 8px; }
 </style>
 </head>
 <body>
@@ -261,6 +279,24 @@
   </div>
   <div id="bestLine" class="statSmall hidden"></div>
   <div class="credit">made with 💕 by Malek, for Ranooma</div>
+  <button id="saveBtn" class="tog" style="margin-top:4px;font-size:13px;padding:6px 16px">💾 Save / Restore progress</button>
+</div>
+
+<!-- Save modal -->
+<div id="saveModal" class="hidden">
+  <div id="saveBox">
+    <h2>💾 Save Progress</h2>
+    <p>Copy this code and keep it safe (screenshot it or paste it in your notes). Paste it back anytime to restore your progress after reinstalling.</p>
+    <textarea id="saveCodeOut" readonly placeholder="Your save code will appear here..."></textarea>
+    <div class="saveRow">
+      <button id="copySaveBtn" class="btn">📋 Copy</button>
+      <button id="closeSaveBtn" class="btn alt">✖ Close</button>
+    </div>
+    <hr class="saveDivider">
+    <p>Already have a save code? Paste it below to restore:</p>
+    <textarea id="saveCodeIn" placeholder="Paste your save code here..."></textarea>
+    <button id="loadSaveBtn" class="btn" style="background:linear-gradient(180deg,#7ed957,#4fae2a);box-shadow:0 5px 0 #2f8a10,0 8px 20px rgba(79,174,42,.4)">✅ Restore & reload</button>
+  </div>
 </div>
 
 <!-- Level complete / shop screen -->
@@ -1888,6 +1924,7 @@ function toMenu() {
 }
 function hideAllScreens() {
   ['titleScreen', 'levelScreen', 'overScreen', 'pauseScreen'].forEach(id => $(id).classList.add('hidden'));
+  $('saveModal').classList.add('hidden');
   $('hint').classList.add('hidden');
   $('housePrompt').classList.add('hidden');
   housePromptVisible = false;
@@ -2168,6 +2205,53 @@ function inputVec() {
   }
   return [joyVX, joyVY];
 }
+/* ============================== save / restore ============================== */
+const SAVE_KEYS = ['best','bestlvl','hd','snd','chime','ctrl','dress','hair','intRug','intBed','intVase'];
+
+function exportSave() {
+  const data = {};
+  SAVE_KEYS.forEach(k => {
+    const v = localStorage.getItem('bloombee_' + k);
+    if (v !== null) data[k] = v;
+  });
+  return btoa(JSON.stringify(data));
+}
+
+function importSave(code) {
+  try {
+    const data = JSON.parse(atob(code.trim()));
+    SAVE_KEYS.forEach(k => { if (data[k] !== undefined) localStorage.setItem('bloombee_' + k, data[k]); });
+    return true;
+  } catch(e) { return false; }
+}
+
+$('saveBtn').addEventListener('click', () => {
+  $('saveCodeOut').value = exportSave();
+  $('saveCodeIn').value = '';
+  $('copySaveBtn').textContent = '📋 Copy';
+  $('saveModal').classList.remove('hidden');
+});
+$('closeSaveBtn').addEventListener('click', () => $('saveModal').classList.add('hidden'));
+$('copySaveBtn').addEventListener('click', () => {
+  const ta = $('saveCodeOut');
+  ta.select(); ta.setSelectionRange(0, 99999);
+  navigator.clipboard ? navigator.clipboard.writeText(ta.value).catch(() => document.execCommand('copy'))
+                      : document.execCommand('copy');
+  $('copySaveBtn').textContent = '✅ Copied!';
+  setTimeout(() => $('copySaveBtn').textContent = '📋 Copy', 2200);
+});
+$('loadSaveBtn').addEventListener('click', () => {
+  const code = $('saveCodeIn').value.trim();
+  if (!code) { $('saveCodeIn').style.borderColor = '#ff6b9d'; setTimeout(() => $('saveCodeIn').style.borderColor = '', 1200); return; }
+  if (importSave(code)) {
+    $('saveModal').classList.add('hidden');
+    location.reload();
+  } else {
+    $('saveCodeIn').style.borderColor = '#ff4444';
+    setTimeout(() => $('saveCodeIn').style.borderColor = '', 1500);
+  }
+});
+
 /* ============================== UI wiring ============================== */
 $('playBtn').addEventListener('click', () => { initAudio(); sfx.click(); startGame(1); });
 $('nextBtn').addEventListener('click', () => { initAudio(); sfx.click(); startGame(level + 1); });
