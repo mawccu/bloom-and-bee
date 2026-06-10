@@ -1570,6 +1570,7 @@ const MALEK_ULT_BLAST = [
 let malekCharge = 0, malekWasReady = false;
 let ultActive = false, ultPhase = '', ultT = 0, ultDidBlast = false;
 let kissCd = 0, kissAnimT = 0;
+let _ultTriggeredWin = false, _carryTarget = null;
 
 function kissTone() { tone(880, 0.12, 'sine', 0.13); tone(1245, 0.2, 'sine', 0.1, 0.07); }
 function ultInTone() { [330, 440, 587, 784].forEach((f, i) => tone(f, 0.18, 'sawtooth', 0.08, i * 0.06)); }
@@ -1589,60 +1590,57 @@ function blowKiss() {
 
 function triggerMalekUlt() {
   ultActive = true; ultPhase = 'drop'; ultT = 0; ultDidBlast = false;
+  _ultTriggeredWin = false; _carryTarget = null;
   malekCharge = 0; malekWasReady = false;
-  invuln = Math.max(invuln, 5.5);
+  invuln = Math.max(invuln, 99); // stay invincible through the whole ult
   const mc = malekChar;
-  // landing spot right beside Ranooma, nudged toward the camera so both are in frame
-  mc.landX = clamp(girl.position.x + 1.6, -FIELD_R + 2, FIELD_R - 2);
-  mc.landZ = clamp(girl.position.z + 0.7, -FIELD_R + 2, FIELD_R - 2);
-  mc.g.position.set(mc.landX, 9, mc.landZ);
-  mc.g.scale.set(1, 1, 1);
-  mc.g.rotation.y = 0;
+  mc.landX = clamp(girl.position.x + 1.8, -FIELD_R + 2, FIELD_R - 2);
+  mc.landZ = clamp(girl.position.z + 0.5, -FIELD_R + 2, FIELD_R - 2);
+  mc.g.position.set(mc.landX, 10, mc.landZ);
+  mc.g.scale.set(1, 1, 1); mc.g.rotation.set(0, 0, 0);
   malekRestArms();
   mc.g.visible = true; mc.shadow.visible = true;
   $('kissBtn').classList.remove('ready');
-  malek.queue.length = 0; malek.showT = 0;       // clear chat so the ult line shows now
+  malek.queue.length = 0; malek.showT = 0;
   malekSay('ultcall_' + Math.random(), choice(MALEK_ULT_CALL));
   ultInTone();
   if (navigator.vibrate) navigator.vibrate([30, 40, 60]);
 }
 
-function doMalekBlast() {
+function _clearEnemies() {
   const fl = $('flash'); fl.classList.remove('go'); void fl.offsetWidth; fl.classList.add('go');
-  shake = 0.7;
-  burst(girl.position.clone().setY(1.2), [0xffd24a, 0xfff3b0, 0xffffff, 0xff9ec6, 0x9d5eff], 44, 5.5, 3, 1.2, 1.5);
+  shake = 0.6;
+  burst(malekChar.g.position.clone().setY(0.4), [0xe9dcc0, 0xffffff, 0xffe27a], 22, 4.2, 0.5, 0.7, 1.1);
   ultBlastTone();
-  // expanding golden shockwave
-  swatRing.material.color.setHex(0xffe27a);
-  // clear every enemy
-  for (const b of bees) {
-    b.state = 'flee'; b.fleeT = 4; b.cooldown = rand(7, 10);
-    burst(b.g.position.clone(), [0xffd24a, 0xffffff], 7, 3.5, 2, 0.6);
-  }
+  for (const b of bees) { b.state = 'flee'; b.fleeT = 6; b.cooldown = rand(8, 12); }
   if (crow.active) { if (crow.state === 'carry') crowDrop(); else crow.state = 'fleeUp'; }
   if (bunny.active) bunnyScare();
-  if (rainCloud.active) { burst(rainCloud.g.position.clone(), [0xffffff, 0x9fc8e8], 16, 3, 1, 0.9); cloudHide(); }
-  // vacuum ALL open flowers straight into the basket (helps finish the level)
-  for (const f of openFlowers()) { if (state !== 'playing') break; pickFlower(f); }
-  // golden shower as a parting gift
-  if (state === 'playing') for (let i = 0; i < 5; i++) spawnFlower('golden');
-  timeLeft = Math.min(timeLeft + 12, timeMax);
-  score += 200; hudDirty = true;
-  floatText(girl.position.clone().setY(2.7), '+200 ⭐  +12s ⏱️', 'gold');
-  malekSay('ultblast_' + Math.random(), choice(MALEK_ULT_BLAST));
-  if (navigator.vibrate) navigator.vibrate(120);
+  if (rainCloud.active) cloudHide();
+  if (navigator.vibrate) navigator.vibrate(80);
+}
+
+function _findNearestFlower() {
+  const open = openFlowers();
+  if (!open.length) return null;
+  let best = null, bestD = Infinity;
+  const px = malekChar.g.position.x, pz = malekChar.g.position.z;
+  for (const f of open) {
+    const d = Math.hypot(f.g.position.x - px, f.g.position.z - pz);
+    if (d < bestD) { bestD = d; best = f; }
+  }
+  return best;
 }
 
 function endMalekUlt() {
   ultActive = false; ultPhase = ''; ultDidBlast = false;
   malekChar.g.visible = false; malekChar.shadow.visible = false;
+  girl.rotation.z = 0; girl.rotation.y = 0;
 }
 
 function updateMalekUlt(dt) {
   if (!ultActive) return;
   ultT += dt;
   const mc = malekChar;
-  // continuous flair
   mc.aura.rotation.z += dt * 1.8;
   mc.aura.material.opacity = 0.4 + Math.sin(animT * 7) * 0.22;
   mc.glow.material.opacity = 0.08 + Math.sin(animT * 5) * 0.04;
@@ -1650,61 +1648,156 @@ function updateMalekUlt(dt) {
   mc.cape.rotation.x = Math.sin(animT * 5) * 0.25 - 0.1;
   mc.shadow.position.set(mc.g.position.x, 0.028, mc.g.position.z);
 
+  /* --- drop from sky --- */
   if (ultPhase === 'drop') {
-    // fall straight down onto the ground beside Ranooma
-    mc.g.position.y = Math.max(0, mc.g.position.y - 26 * dt);
+    mc.g.position.y = Math.max(0, mc.g.position.y - 28 * dt);
     mc.g.rotation.y += dt * 3;
     mc.shadow.material.opacity = clamp(0.32 - mc.g.position.y * 0.02, 0.05, 0.32);
     if (mc.g.position.y <= 0.001) {
       mc.g.position.set(mc.landX, 0, mc.landZ);
-      mc.g.rotation.y = 0;                       // face the camera / Ranooma
-      shake = 0.6;
-      burst(mc.g.position.clone().setY(0.2), [0xe9dcc0, 0xffffff, 0xffe27a], 20, 4.2, 0.5, 0.7, 1.1); // dust
-      if (!ultDidBlast) { ultDidBlast = true; doMalekBlast(); }   // landing = the big skill
-      ultPhase = 'flex'; ultT = 0;
+      mc.g.rotation.y = 0;
+      _clearEnemies();
+      ultPhase = 'pickup'; ultT = 0;
     }
     return;
   }
-  mc.shadow.material.opacity = 0.3;
-  mc.g.position.x = mc.landX; mc.g.position.z = mc.landZ;
 
-  if (ultPhase === 'flex') {
-    // squash-recover from landing, then a big double-biceps flex 💪
-    const land = Math.min(1, ultT / 0.18);
-    mc.g.scale.y = 0.7 + 0.3 * land; mc.g.scale.x = mc.g.scale.z = 1.3 - 0.3 * land;
-    mc.g.position.y = 0;
-    const fa = Math.min(1, ultT / 0.35) * (0.92 + Math.sin(animT * 11) * 0.08);
-    malekFlexPose(fa);
-    if (Math.random() < dt * 8) burst(mc.g.position.clone().setY(2.3), [0xffe27a, 0xffffff], 2, 1.5, 1, 0.5, 0.7);
-    if (ultT > 1.1) { ultPhase = 'combo'; ultT = 0; }
-  } else if (ultPhase === 'combo') {
-    // quick alternating punches — showing off his skills
+  mc.shadow.material.opacity = 0.3;
+
+  /* --- reach arms out, scoop Ranooma up --- */
+  if (ultPhase === 'pickup') {
+    mc.g.position.set(mc.landX, 0, mc.landZ); mc.g.scale.set(1, 1, 1);
+    const k = Math.min(1, ultT / 0.5);
+    // cradle arms: both come forward and inward
+    mc.arms[0].sh.rotation.z = -0.28 + k * 0.95; mc.arms[0].sh.rotation.x = -k * 1.1; mc.arms[0].elbow.rotation.x = -k * 0.8;
+    mc.arms[1].sh.rotation.z =  0.28 - k * 0.95; mc.arms[1].sh.rotation.x = -k * 1.1; mc.arms[1].elbow.rotation.x = -k * 0.8;
+    // girl rises smoothly into arms
+    girl.position.x += (mc.g.position.x + 0.05 - girl.position.x) * Math.min(1, dt * 9);
+    girl.position.z += (mc.g.position.z - 0.3  - girl.position.z) * Math.min(1, dt * 9);
+    girl.position.y = k * 1.35;
+    girl.rotation.z = k * 0.32;
+    girl.visible = true;
+    if (ultT > 0.55) {
+      _carryTarget = _findNearestFlower();
+      ultPhase = 'carry'; ultT = 0;
+      malekSay('ultcarry_' + Math.random(), "Hold on tight, ya amar 💕 I've got every flower for you! 🌸");
+    }
+    return;
+  }
+
+  /* --- carry Ranooma, zoom to every flower --- */
+  if (ultPhase === 'carry') {
+    girl.visible = true;
+    // running legs
+    mc.legs[0].rotation.x = -Math.sin(ultT * 12) * 1.05;
+    mc.legs[1].rotation.x =  Math.sin(ultT * 12) * 1.05;
+    mc.g.position.y = Math.abs(Math.sin(ultT * 12)) * 0.14;
     mc.g.scale.set(1, 1, 1);
-    const hz = 6, beat = Math.floor(ultT * hz), k = Math.sin((ultT * hz % 1) * Math.PI);
-    mc.arms.forEach((a, i) => {
-      const active = (beat % 2) === i;
-      a.sh.rotation.z = a.side * 0.18;
-      a.sh.rotation.x = active ? -k * 2.0 : -0.1;     // jab forward
-      a.elbow.rotation.x = active ? -(1 - k) * 0.5 : -0.6;
-    });
-    mc.g.position.y = Math.abs(Math.sin(ultT * hz * Math.PI)) * 0.05;
-    if (Math.random() < dt * 11)
-      burst(mc.g.position.clone().setY(1.7).add(new THREE.Vector3(rand(-0.5, 0.5), 0, 0.7)), [0xff9ec6, 0xffffff], 2, 2, 1, 0.4, 0.7);
-    if (ultT > 1.0) { ultPhase = 'pose'; ultT = 0; }
-  } else if (ultPhase === 'pose') {
-    // victory: one fist punched to the sky, facing Ranooma
-    mc.g.position.y = 0; mc.g.scale.set(1, 1, 1);
-    const k = Math.min(1, ultT / 0.22);
-    mc.arms[1].sh.rotation.z = 0.15; mc.arms[1].sh.rotation.x = -k * 2.7; mc.arms[1].elbow.rotation.x = 0;
-    mc.arms[0].sh.rotation.z = -0.32; mc.arms[0].sh.rotation.x = 0; mc.arms[0].elbow.rotation.x = -0.35;
-    if (Math.random() < dt * 5) burst(mc.g.position.clone().setY(3.0), [0xffe27a, 0xffffff], 2, 1.2, 1.2, 0.5, 0.7);
-    if (ultT > 0.8) { ultPhase = 'leave'; ultT = 0; }
-  } else if (ultPhase === 'leave') {
-    // heroic jump out
-    mc.g.position.y += 9 * dt;
+    // cradle arms stay locked
+    mc.arms[0].sh.rotation.z =  0.67; mc.arms[0].sh.rotation.x = -1.1; mc.arms[0].elbow.rotation.x = -0.8;
+    mc.arms[1].sh.rotation.z = -0.67; mc.arms[1].sh.rotation.x = -1.1; mc.arms[1].elbow.rotation.x = -0.8;
+
+    if (_carryTarget && !_carryTarget.picked) {
+      const tx = _carryTarget.g.position.x, tz = _carryTarget.g.position.z;
+      const dx = tx - mc.g.position.x, dz = tz - mc.g.position.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist > 0.9) {
+        const sp = 19 * dt;
+        mc.g.position.x += (dx / dist) * sp;
+        mc.g.position.z += (dz / dist) * sp;
+        mc.g.rotation.y = Math.atan2(dx, dz);
+      } else {
+        if (state === 'playing') pickFlower(_carryTarget);
+        _carryTarget = _findNearestFlower();
+      }
+    } else {
+      _carryTarget = _findNearestFlower();
+    }
+
+    // girl position in Malek's arms (follows him)
+    const fwd = new THREE.Vector3(Math.sin(mc.g.rotation.y), 0, Math.cos(mc.g.rotation.y));
+    girl.position.x = mc.g.position.x + fwd.x * 0.25;
+    girl.position.y = mc.g.position.y + 1.35;
+    girl.position.z = mc.g.position.z + fwd.z * 0.25;
+    girl.rotation.z = 0.32;
+
+    // heart trail
+    if (Math.random() < dt * 5)
+      burst(girl.position.clone(), [0xff6fa5, 0xff9ec6, 0xffffff], 2, 1.4, 1.8, 0.5, 0.6);
+
+    if (!_carryTarget) { ultPhase = 'kiss'; ultT = 0; mc.g.rotation.y = 0; }
+    return;
+  }
+
+  /* --- kiss scene 💋 --- */
+  if (ultPhase === 'kiss') {
+    mc.g.scale.set(1, 1, 1);
+    mc.legs[0].rotation.x *= 0.8; mc.legs[1].rotation.x *= 0.8;
+    mc.g.position.y = 0;
+
+    // girl slides gently to stand beside Malek, facing him
+    girl.position.x += (mc.g.position.x + 0.52 - girl.position.x) * Math.min(1, dt * 5);
+    girl.position.y += (0 - girl.position.y) * Math.min(1, dt * 7);
+    girl.position.z += (mc.g.position.z - 0.08 - girl.position.z) * Math.min(1, dt * 5);
+    girl.visible = true;
+
+    // lean toward each other
+    const lean = Math.min(1, ultT / 0.55);
+    girl.rotation.z = -lean * 0.24;
+    mc.g.rotation.z = lean * 0.20;
+
+    // Malek's arm wraps around girl's back
+    mc.arms[0].sh.rotation.z = 0.9;  mc.arms[0].sh.rotation.x = -0.45; mc.arms[0].elbow.rotation.x = -0.15;
+    mc.arms[1].sh.rotation.z = -0.28; mc.arms[1].sh.rotation.x = -0.1; mc.arms[1].elbow.rotation.x = -0.3;
+
+    // continuous heart burst
+    if (Math.random() < dt * 9) {
+      const hp = new THREE.Vector3(
+        (mc.g.position.x + girl.position.x) * 0.5,
+        1.9 + Math.random() * 0.6,
+        (mc.g.position.z + girl.position.z) * 0.5);
+      burst(hp, [0xff4488, 0xff9ec6, 0xffa0cc, 0xffffff], 3, 1.6, 2.4, 0.9, 0.7);
+    }
+
+    // 💋 pop at the moment of the kiss
+    if (ultT > 0.52 && ultT < 0.62) {
+      floatText(new THREE.Vector3(
+        (mc.g.position.x + girl.position.x) * 0.5,
+        2.6,
+        (mc.g.position.z + girl.position.z) * 0.5), '💋', '');
+      kissTone(); kissTone();
+    }
+
+    if (ultT > 2.4) { ultPhase = 'setdown'; ultT = 0; }
+    return;
+  }
+
+  /* --- gently set her down --- */
+  if (ultPhase === 'setdown') {
+    const k = Math.min(1, ultT / 0.4);
+    mc.g.rotation.z = (1 - k) * 0.20;
+    girl.rotation.z = -(1 - k) * 0.24;
+    girl.position.y = (1 - k) * 0.15;
+    malekRestArms();
+    girl.visible = true;
+    if (ultT > 0.45) {
+      girl.rotation.z = 0; mc.g.rotation.z = 0; girl.position.y = 0;
+      // trigger the level win if all flowers were collected during carry
+      if (_ultTriggeredWin) {
+        _ultTriggeredWin = false;
+        _doLevelWon(true);   // pass true = don't call endMalekUlt yet
+      }
+      ultPhase = 'leave'; ultT = 0;
+    }
+    return;
+  }
+
+  /* --- heroic exit --- */
+  if (ultPhase === 'leave') {
+    mc.g.position.y += 10 * dt;
     mc.g.rotation.y += dt * 4;
-    mc.g.scale.multiplyScalar(Math.max(0.001, 1 - dt * 0.9));
-    if (ultT > 0.9) endMalekUlt();
+    mc.g.scale.multiplyScalar(Math.max(0.001, 1 - dt * 1.1));
+    if (ultT > 0.8) endMalekUlt();
   }
 }
 
@@ -1887,6 +1980,11 @@ function startGame(fromLevel) {
 
 let _winShopData = null;
 function levelWon() {
+  // while Malek is carrying Ranooma, hold the win until after the kiss
+  if (ultActive) { _ultTriggeredWin = true; return; }
+  _doLevelWon(false);
+}
+function _doLevelWon(fromUlt) {
   state = 'won'; winT = 0;
   const bonus = Math.round(timeLeft) * 5;
   const petalBonus = 2 + level;
@@ -1895,7 +1993,7 @@ function levelWon() {
   best = Math.max(best, score); store.set('best', best);
   bestLvl = Math.max(bestLvl, level); store.set('bestlvl', bestLvl);
   sfx.win();
-  endMalekUlt();
+  if (!fromUlt) endMalekUlt(); // let ult finish its leave animation on its own
   clearFlowers(true); clearPickups(); crowHide();
   const pos = girl.position.clone().setY(1.5);
   burst(pos, FLOWER_COLORS, 26, 3.4, 2.6, 1.1, 1.2);
@@ -1905,13 +2003,16 @@ function levelWon() {
     sub: `⏱️ +${bonus} time bonus · 🌸 +${petalBonus} petals · 💗 +1 heart`,
     nextLevel: level + 1,
   };
+  const delay = fromUlt ? 1800 : 900; // extra breathing room after the kiss scene
   setTimeout(() => {
     if (state !== 'won') return;
     $('malekWinTitle').textContent = _winShopData.title;
     $('malekWinSub').innerHTML = _winShopData.sub;
-    $('malekWinMsg').textContent = choice(MALEK_PRAISE);
+    $('malekWinMsg').textContent = fromUlt
+      ? choice(["Every flower, just for you 💕😘", "You felt that? I coded it 😎💘", "Level clear AND a kiss — best day ever 💋✨"])
+      : choice(MALEK_PRAISE);
     $('malekWin').classList.remove('hidden');
-  }, 900);
+  }, delay);
 }
 function previewLine(n) {
   const c = levelCfg(n);
@@ -2824,7 +2925,6 @@ function cosmetics(dt) {
   girlShadow.position.set(girl.position.x, 0.025, girl.position.z);
 
   updateMalek(dt);
-  updateMalekUlt(dt);
 
   if (state === 'playing' && soundOn && chimesOn && AC && animT > nextChime) {
     tone(choice([523, 587, 659, 784, 880, 1047]), 1.4, 'triangle', 0.028);
@@ -3078,6 +3178,7 @@ const clock = new THREE.Clock();
 function tick(dt) {
   animT += dt;
   if (state === 'playing') gameplay(dt);
+  updateMalekUlt(dt); // runs regardless of state so carry/kiss/leave survive the 'won' transition
   cosmetics(dt);
   updateParticles(dt);
   updateCamera(dt);
