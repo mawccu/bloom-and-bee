@@ -24,34 +24,34 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Set up Gradle 7.6.4
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '7.6.4'
+      - name: Install Android platform 33 + build-tools
+        run: sdkmanager "platforms;android-33" "build-tools;33.0.2"
 
       - name: Build APK
         run: |
+          # ---------- project skeleton ----------
           mkdir -p project/app/src/main/java/com/malek/bloomandbee
           mkdir -p project/app/src/main/assets/www
           cp index.html three.module.js project/app/src/main/assets/www/
 
-          cat > project/settings.gradle << 'GRADLE'
+          cat > project/settings.gradle << 'EOF'
           rootProject.name = 'BloomAndBee'
           include ':app'
-          GRADLE
+          EOF
 
-          cat > project/build.gradle << 'GRADLE'
+          cat > project/build.gradle << 'EOF'
           buildscript {
             repositories { google(); mavenCentral() }
             dependencies { classpath 'com.android.tools.build:gradle:7.4.2' }
           }
           allprojects { repositories { google(); mavenCentral() } }
-          GRADLE
+          EOF
 
-          cat > project/app/build.gradle << 'GRADLE'
+          cat > project/app/build.gradle << 'EOF'
           apply plugin: 'com.android.application'
           android {
             compileSdkVersion 33
+            buildToolsVersion '33.0.2'
             defaultConfig {
               applicationId 'com.malek.bloomandbee'
               minSdkVersion 24
@@ -60,9 +60,9 @@ jobs:
               versionName '1.0'
             }
           }
-          GRADLE
+          EOF
 
-          cat > project/app/src/main/AndroidManifest.xml << 'XML'
+          cat > project/app/src/main/AndroidManifest.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
             <uses-permission android:name="android.permission.INTERNET"/>
@@ -81,9 +81,9 @@ jobs:
               </activity>
             </application>
           </manifest>
-          XML
+          EOF
 
-          cat > project/app/src/main/java/com/malek/bloomandbee/MainActivity.java << 'JAVA'
+          cat > project/app/src/main/java/com/malek/bloomandbee/MainActivity.java << 'EOF'
           package com.malek.bloomandbee;
           import android.app.Activity;
           import android.os.Bundle;
@@ -106,12 +106,21 @@ jobs:
               wv.loadUrl("file:///android_asset/www/index.html");
             }
           }
-          JAVA
+          EOF
+
+          # ---------- Gradle wrapper ----------
+          # setup-gradle action doesn't put 'gradle' in PATH — download 7.6.4 explicitly
+          curl -sL https://services.gradle.org/distributions/gradle-7.6.4-bin.zip -o /tmp/gradle.zip
+          unzip -q /tmp/gradle.zip -d /tmp/gradle-dist
 
           cd project
-          gradle wrapper --gradle-version=7.6.4
+          /tmp/gradle-dist/gradle-7.6.4/bin/gradle wrapper \
+            --gradle-version=7.6.4 \
+            --distribution-type=bin
           chmod +x gradlew
-          ./gradlew assembleDebug
+
+          # ---------- Build ----------
+          ./gradlew assembleDebug --stacktrace
 
       - name: Copy APK
         run: cp project/app/build/outputs/apk/debug/app-debug.apk bloom-and-bee.apk
