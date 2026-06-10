@@ -29,6 +29,15 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Install Gradle 7.6.4
+        run: |
+          curl -sL https://services.gradle.org/distributions/gradle-7.6.4-bin.zip -o /tmp/gradle.zip
+          sudo unzip -q /tmp/gradle.zip -d /usr/local/lib/
+          echo "GRADLE_HOME=/usr/local/lib/gradle-7.6.4" >> $GITHUB_ENV
+          echo "/usr/local/lib/gradle-7.6.4/bin" >> $GITHUB_PATH
+          # Hide system Gradle 9 so cordova-android@12 doesn't pick it up via path scan
+          sudo mv /usr/share/gradle-9.5.1 /usr/share/gradle-9.5.1.bak 2>/dev/null || true
+
       - name: Install Cordova
         run: npm install -g cordova@12
 
