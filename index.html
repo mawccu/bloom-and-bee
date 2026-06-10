@@ -2278,7 +2278,6 @@ function cosmetics(dt) {
     swatRing.position.set(girl.position.x, 0.5, girl.position.z);
     swatRing.scale.setScalar(0.4 + k * stat.swatR());
     swatRing.material.opacity = (1 - k) * 0.7;
-    girl.rotation.y += dt * 19; // spin!
   } else swatRing.visible = false;
 
   // guide arrow toward nearest flower
