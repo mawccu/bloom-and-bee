@@ -1,0 +1,12 @@
+# test / build artifacts
+.upload_server.py
+shot_*.jpg
+.shot.*
+node_modules/
+www/
+platforms/
+plugins/
+*.apk
+*.keystore
+.gradle/
+build/

@@ -1,0 +1,97 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Cordova
+        run: npm install -g cordova@12
+
+      - name: Create Cordova wrapper
+        run: |
+          cordova create app com.malek.bloomandbee BloomAndBee
+          rm -rf app/www/*
+          cp index.html three.module.js app/www/
+          # config: app name, fullscreen, lock nothing (game handles layout)
+          cat > app/config.xml <<'XML'
+          <?xml version='1.0' encoding='utf-8'?>
+          <widget id="com.malek.bloomandbee" version="1.0.0" xmlns="http://www.w3.org/ns/widgets" xmlns:cdv="http://cordova.apache.org/ns/1.0">
+              <name>Bloom &amp; Bee</name>
+              <description>A cute 3D flower-picking game for Ranooma.</description>
+              <author email="malekdailyshii@gmail.com">Malek</author>
+              <content src="index.html" />
+              <allow-intent href="http://*/*" />
+              <allow-intent href="https://*/*" />
+              <preference name="Fullscreen" value="true" />
+              <preference name="BackgroundColor" value="0xFFCDEAFF" />
+              <preference name="SplashMaintainAspectRatio" value="true" />
+              <preference name="AndroidWindowSplashScreenBackgroundColor" value="#CDEAFF" />
+              <preference name="Orientation" value="default" />
+              <preference name="android-minSdkVersion" value="24" />
+              <preference name="android-targetSdkVersion" value="34" />
+              <platform name="android">
+                  <allow-intent href="market:*" />
+              </platform>
+          </widget>
+          XML
+
+      - name: Add Android platform & build
+        working-directory: app
+        run: |
+          cordova platform add android@13
+          cordova build android --verbose
+
+      - name: Locate APK
+        id: apk
+        run: |
+          APK=$(find app/platforms/android -name "*-debug.apk" | head -1)
+          echo "Found APK: $APK"
+          cp "$APK" bloom-and-bee.apk
+          echo "path=bloom-and-bee.apk" >> "$GITHUB_OUTPUT"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bloom-and-bee-apk
+          path: bloom-and-bee.apk
+
+      - name: Publish Release
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Bloom & Bee v1.0.${{ github.run_number }}
+          body: |
+            📱 **Download `bloom-and-bee.apk` below and install it on your Android phone or tablet.**
+
+            You may need to allow "install from unknown sources" in your settings.
+
+            Made with 💕 by Malek, for Ranooma.
+          files: bloom-and-bee.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
