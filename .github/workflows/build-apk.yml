@@ -64,6 +64,8 @@ jobs:
         working-directory: app
         run: |
           cordova platform add android@13
+          # appcompat:1.6.1 has an invalid <color> resource that breaks AGP 8.x — force 1.7.0
+          echo 'configurations.all { resolutionStrategy { force "androidx.appcompat:appcompat:1.7.0" } }' >> platforms/android/build-extras.gradle
           cordova build android --verbose
 
       - name: Locate APK
