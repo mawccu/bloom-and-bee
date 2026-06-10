@@ -21,66 +21,100 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Gradle 7.6.4
-        run: |
-          curl -sL https://services.gradle.org/distributions/gradle-7.6.4-bin.zip -o /tmp/gradle.zip
-          sudo unzip -q /tmp/gradle.zip -d /usr/local/lib/
-          echo "GRADLE_HOME=/usr/local/lib/gradle-7.6.4" >> $GITHUB_ENV
-          echo "/usr/local/lib/gradle-7.6.4/bin" >> $GITHUB_PATH
-          # Hide system Gradle 9 so cordova-android@12 doesn't pick it up via path scan
-          sudo mv /usr/share/gradle-9.5.1 /usr/share/gradle-9.5.1.bak 2>/dev/null || true
+      - name: Set up Gradle 7.6.4
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '7.6.4'
 
-      - name: Install Cordova
-        run: npm install -g cordova@12
-
-      - name: Create Cordova wrapper
+      - name: Build APK
         run: |
-          cordova create app com.malek.bloomandbee BloomAndBee
-          rm -rf app/www/*
-          cp index.html three.module.js app/www/
-          cat > app/config.xml <<'XML'
-          <?xml version='1.0' encoding='utf-8'?>
-          <widget id="com.malek.bloomandbee" version="1.0.0" xmlns="http://www.w3.org/ns/widgets" xmlns:cdv="http://cordova.apache.org/ns/1.0">
-              <name>Bloom &amp; Bee</name>
-              <description>A cute 3D flower-picking game for Ranooma.</description>
-              <author email="malekdailyshii@gmail.com">Malek</author>
-              <content src="index.html" />
-              <allow-intent href="http://*/*" />
-              <allow-intent href="https://*/*" />
-              <preference name="Fullscreen" value="true" />
-              <preference name="BackgroundColor" value="0xFFCDEAFF" />
-              <preference name="SplashMaintainAspectRatio" value="true" />
-              <preference name="AndroidWindowSplashScreenBackgroundColor" value="#CDEAFF" />
-              <preference name="Orientation" value="default" />
-              <preference name="android-minSdkVersion" value="24" />
-              <preference name="android-targetSdkVersion" value="33" />
-              <platform name="android">
-                  <allow-intent href="market:*" />
-              </platform>
-          </widget>
+          mkdir -p project/app/src/main/java/com/malek/bloomandbee
+          mkdir -p project/app/src/main/assets/www
+          cp index.html three.module.js project/app/src/main/assets/www/
+
+          cat > project/settings.gradle << 'GRADLE'
+          rootProject.name = 'BloomAndBee'
+          include ':app'
+          GRADLE
+
+          cat > project/build.gradle << 'GRADLE'
+          buildscript {
+            repositories { google(); mavenCentral() }
+            dependencies { classpath 'com.android.tools.build:gradle:7.4.2' }
+          }
+          allprojects { repositories { google(); mavenCentral() } }
+          GRADLE
+
+          cat > project/app/build.gradle << 'GRADLE'
+          apply plugin: 'com.android.application'
+          android {
+            compileSdkVersion 33
+            defaultConfig {
+              applicationId 'com.malek.bloomandbee'
+              minSdkVersion 24
+              targetSdkVersion 33
+              versionCode 1
+              versionName '1.0'
+            }
+          }
+          GRADLE
+
+          cat > project/app/src/main/AndroidManifest.xml << 'XML'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+            <uses-permission android:name="android.permission.INTERNET"/>
+            <application
+              android:label="Bloom &amp; Bee"
+              android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
+              android:hardwareAccelerated="true">
+              <activity
+                android:name=".MainActivity"
+                android:exported="true"
+                android:configChanges="orientation|screenSize|keyboardHidden">
+                <intent-filter>
+                  <action android:name="android.intent.action.MAIN"/>
+                  <category android:name="android.intent.category.LAUNCHER"/>
+                </intent-filter>
+              </activity>
+            </application>
+          </manifest>
           XML
 
-      - name: Add Android platform & build
-        working-directory: app
-        run: |
-          cordova platform add android@12
-          cordova build android --verbose
+          cat > project/app/src/main/java/com/malek/bloomandbee/MainActivity.java << 'JAVA'
+          package com.malek.bloomandbee;
+          import android.app.Activity;
+          import android.os.Bundle;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.view.WindowManager;
+          public class MainActivity extends Activity {
+            @Override
+            protected void onCreate(Bundle b) {
+              super.onCreate(b);
+              getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+              WebView wv = new WebView(this);
+              setContentView(wv);
+              WebSettings ws = wv.getSettings();
+              ws.setJavaScriptEnabled(true);
+              ws.setAllowFileAccessFromFileURLs(true);
+              ws.setAllowUniversalAccessFromFileURLs(true);
+              ws.setMediaPlaybackRequiresUserGesture(false);
+              ws.setDomStorageEnabled(true);
+              wv.loadUrl("file:///android_asset/www/index.html");
+            }
+          }
+          JAVA
 
-      - name: Locate APK
-        id: apk
-        run: |
-          APK=$(find app/platforms/android -name "*-debug.apk" | head -1)
-          echo "Found APK: $APK"
-          cp "$APK" bloom-and-bee.apk
-          echo "path=bloom-and-bee.apk" >> "$GITHUB_OUTPUT"
+          cd project
+          gradle wrapper --gradle-version=7.6.4
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Copy APK
+        run: cp project/app/build/outputs/apk/debug/app-debug.apk bloom-and-bee.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
