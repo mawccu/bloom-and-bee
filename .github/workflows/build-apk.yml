@@ -37,7 +37,6 @@ jobs:
           cordova create app com.malek.bloomandbee BloomAndBee
           rm -rf app/www/*
           cp index.html three.module.js app/www/
-          # config: app name, fullscreen, lock nothing (game handles layout)
           cat > app/config.xml <<'XML'
           <?xml version='1.0' encoding='utf-8'?>
           <widget id="com.malek.bloomandbee" version="1.0.0" xmlns="http://www.w3.org/ns/widgets" xmlns:cdv="http://cordova.apache.org/ns/1.0">
@@ -53,7 +52,7 @@ jobs:
               <preference name="AndroidWindowSplashScreenBackgroundColor" value="#CDEAFF" />
               <preference name="Orientation" value="default" />
               <preference name="android-minSdkVersion" value="24" />
-              <preference name="android-targetSdkVersion" value="34" />
+              <preference name="android-targetSdkVersion" value="33" />
               <platform name="android">
                   <allow-intent href="market:*" />
               </platform>
@@ -63,9 +62,7 @@ jobs:
       - name: Add Android platform & build
         working-directory: app
         run: |
-          cordova platform add android@13
-          # appcompat:1.6.1 has an invalid <color> resource that breaks AGP 8.x — force 1.7.0
-          echo 'configurations.all { resolutionStrategy { force "androidx.appcompat:appcompat:1.7.0" } }' >> platforms/android/build-extras.gradle
+          cordova platform add android@12
           cordova build android --verbose
 
       - name: Locate APK
