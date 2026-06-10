@@ -40,6 +40,17 @@
     box-shadow:0 5px 0 #d64683, 0 8px 20px rgba(255,94,156,.45); transition:opacity .15s; }
   #swatBtn:active { transform:translateY(3px); box-shadow:0 2px 0 #d64683, 0 5px 12px rgba(255,94,156,.45); }
   #swatBtn.cool { opacity:.45; }
+  #sprintBtn { position:fixed; right:100px; bottom:calc(30px + env(safe-area-inset-bottom)); width:60px; height:60px;
+    border-radius:50%; border:none; cursor:pointer; font-size:26px; z-index:11; touch-action:none;
+    background:linear-gradient(180deg,#aef0c0 0%,#4fc28a 100%);
+    box-shadow:0 5px 0 #2f8a5e, 0 8px 20px rgba(79,194,138,.45); transition:opacity .15s, filter .15s; }
+  #sprintBtn:active { transform:translateY(3px); box-shadow:0 2px 0 #2f8a5e, 0 5px 12px rgba(79,194,138,.45); }
+  #sprintBtn.go { filter:brightness(1.12) drop-shadow(0 0 8px rgba(120,255,180,.7)); }
+  #sprintBtn.tired { filter:grayscale(.75); opacity:.5; }
+  #stamWrap { position:fixed; right:98px; bottom:calc(96px + env(safe-area-inset-bottom)); width:64px; height:9px;
+    background:rgba(255,255,255,.6); border-radius:999px; z-index:11; overflow:hidden; pointer-events:none;
+    box-shadow:inset 0 1px 3px rgba(80,120,90,.25); }
+  #stamBar { height:100%; width:100%; background:#4fc28a; border-radius:999px; transition:background .2s; }
 
   /* ---------- Malek chat ---------- */
   #malek { position:fixed; top:calc(96px + env(safe-area-inset-top)); left:50%; z-index:14;
@@ -184,6 +195,8 @@
 </div>
 <canvas id="mini" width="184" height="184" class="hidden"></canvas>
 <button id="swatBtn" class="hidden">💫</button>
+<div id="stamWrap" class="hidden"><div id="stamBar"></div></div>
+<button id="sprintBtn" class="hidden">💨</button>
 
 <!-- Malek the dev -->
 <div id="malek">
@@ -1444,6 +1457,9 @@ let spawnCd = 0, nextButterflyAt = 10, nextPickupAt = 14, nextCrowAt = 20, nextT
 let moving = false, walkT = 0, lastMoveT = 0;
 let swatCd = 0, swatAnimT = 0;
 let lowTimeWarned = false, idleWarned = false;
+// sprint / stamina
+let sprintBtnHeld = false, stamina = 1, exhausted = false, sprinting = false;
+const SPRINT_MULT = 1.7, STAM_DRAIN = 1 / 2.6, STAM_REGEN = 1 / 4.2, STAM_READY = 0.45;
 let cfg = levelCfg(1);
 
 function levelCfg(n) {
@@ -1482,6 +1498,7 @@ function setupLevel(n) {
   timeMax = timeLeft = cfg.time;
   combo = 0; lastPickAt = -99; stunned = 0; invuln = 0; shake = 0; boostT = 0;
   swatCd = 0; swatAnimT = 0; lowTimeWarned = false; idleWarned = false; lastMoveT = gameT;
+  sprintBtnHeld = false; stamina = 1; exhausted = false; sprinting = false;
   shieldCharges = upg.shield;
   girlRefs.bubble.visible = shieldCharges > 0;
   spawnCd = 0;
@@ -1528,7 +1545,9 @@ function startGame(fromLevel) {
   $('hud2').classList.remove('hidden');
   $('mini').classList.remove('hidden');
   $('swatBtn').classList.remove('hidden');
-  if (fromLevel === 1) { $('hint').textContent = CTRL_HINTS[ctrlMode]; $('hint').classList.remove('hidden'); $('hint').style.opacity = 1; }
+  $('sprintBtn').classList.remove('hidden'); $('stamWrap').classList.remove('hidden');
+  if (fromLevel === 1) { $('hint').textContent = CTRL_HINTS[ctrlMode]; $('hint').classList.remove('hidden'); $('hint').style.opacity = 1;
+    malekSay('sprint', "Hold 💨 (or press Shift on PC) to sprint — but you'll get tired, so pace yourself! 🏃‍♀️"); }
   startCountdown(() => { state = 'playing'; if (ctrlMode === 'fixed') showFixedJoy(); });
 }
 
@@ -1595,6 +1614,7 @@ function toMenu() {
   hideAllScreens();
   $('hud').classList.add('hidden'); $('hud2').classList.add('hidden');
   $('mini').classList.add('hidden'); $('swatBtn').classList.add('hidden');
+  $('sprintBtn').classList.add('hidden'); $('stamWrap').classList.add('hidden'); sprintBtnHeld = false;
   $('malek').classList.remove('show');
   refreshBestLine();
   $('titleScreen').classList.remove('hidden');
@@ -1887,6 +1907,14 @@ $('resumeBtn').addEventListener('click', () => {
   }
 });
 $('swatBtn').addEventListener('pointerdown', e => { e.preventDefault(); initAudio(); doSwat(); });
+// sprint: hold the button to run
+const sprintBtn = $('sprintBtn');
+const sprintDown = e => { e.preventDefault(); initAudio(); sprintBtnHeld = true; };
+const sprintUp = () => { sprintBtnHeld = false; };
+sprintBtn.addEventListener('pointerdown', sprintDown);
+sprintBtn.addEventListener('pointerup', sprintUp);
+sprintBtn.addEventListener('pointercancel', sprintUp);
+sprintBtn.addEventListener('pointerleave', sprintUp);
 function syncSndBtn() { $('sndBtn').textContent = soundOn ? '🔊' : '🔇'; }
 $('sndBtn').addEventListener('click', () => {
   soundOn = !soundOn; store.set('snd', soundOn ? '1' : '0');
@@ -1972,6 +2000,14 @@ function refreshHud() {
     bar.style.background = `hsl(${Math.round(frac * 110)}, 75%, 55%)`;
   }
   $('swatBtn').classList.toggle('cool', swatCd > 0);
+  // stamina bar
+  const sb = $('stamBar');
+  sb.style.width = (stamina * 100) + '%';
+  sb.style.background = exhausted ? '#e2724f' : (stamina < 0.3 ? '#f0b54f' : '#4fc28a');
+  const spb = $('sprintBtn');
+  spb.classList.toggle('tired', exhausted);
+  spb.classList.toggle('go', sprinting);
+  spb.textContent = exhausted ? '😮‍💨' : '💨';
   if (state === 'playing' && ctrlMode === 'fixed' && joyEl.classList.contains('hidden')) showFixedJoy();
 }
 
@@ -2025,12 +2061,29 @@ function gameplay(dt) {
   const [ix, iy] = inputVec();
   const ilen = Math.hypot(ix, iy);
   moving = false;
+  // sprint stamina: drain while sprinting, recover otherwise; lock out when exhausted until refilled past STAM_READY
+  const wantSprint = (sprintBtnHeld || keys.has('ShiftLeft') || keys.has('ShiftRight'));
+  sprinting = wantSprint && ilen > 0.12 && stunned <= 0 && !exhausted && stamina > 0;
+  if (sprinting) {
+    stamina -= STAM_DRAIN * dt;
+    if (stamina <= 0) {
+      stamina = 0; exhausted = true; sprinting = false;
+      sfx.poof(); if (navigator.vibrate) navigator.vibrate(40);
+      floatText(girl.position.clone().setY(2.2), 'tired! 😮‍💨', 'bad');
+      malekSay('tired', "Catch your breath, habibti 😮‍💨 sprint recharges when you slow down!");
+    }
+  } else {
+    stamina = Math.min(1, stamina + STAM_REGEN * dt);
+    if (exhausted && stamina >= STAM_READY) exhausted = false;
+  }
   if (ilen > 0.12 && stunned <= 0) {
     moving = true;
     lastMoveT = gameT;
-    const sp = stat.speed();
+    const sp = stat.speed() * (sprinting ? SPRINT_MULT : 1);
     girl.position.x += ix * sp * dt;
     girl.position.z += iy * sp * dt;
+    if (sprinting && Math.random() < dt * 18)
+      burst(girl.position.clone().setY(0.2), [0xffffff, 0xd0f0ff], 1, 0.9, 0.7, 0.4, 0.7);
     const pr = Math.hypot(girl.position.x, girl.position.z);
     if (pr > FIELD_R) { girl.position.x *= FIELD_R / pr; girl.position.z *= FIELD_R / pr; }
     const ob = inObstacle(girl.position.x, girl.position.z);
@@ -2519,6 +2572,7 @@ function enterHouse() {
   $('hud2').classList.add('hidden');
   $('mini').classList.add('hidden');
   $('swatBtn').classList.add('hidden');
+  $('sprintBtn').classList.add('hidden'); $('stamWrap').classList.add('hidden'); sprintBtnHeld = false;
   $('exitHouseBtn').classList.remove('hidden');
   $('interiorHint').classList.remove('hidden');
   $('interiorHint').style.opacity = 1;
@@ -2536,6 +2590,7 @@ function exitHouse() {
   $('hud2').classList.remove('hidden');
   $('mini').classList.remove('hidden');
   $('swatBtn').classList.remove('hidden');
+  $('sprintBtn').classList.remove('hidden'); $('stamWrap').classList.remove('hidden');
   sfx.click();
   malekSay('houseOut', "Back to the meadow! Don't forget to pick flowers 🌸");
 }
@@ -2617,6 +2672,8 @@ window.__bb = {
   get upg() { return upg; }, get cfg() { return cfg; }, get level() { return level; },
   get shieldCharges() { return shieldCharges; }, get boostT() { return boostT; },
   get swatCd() { return swatCd; },
+  get stamina() { return stamina; }, get exhausted() { return exhausted; }, get sprinting() { return sprinting; },
+  set sprintBtnHeld(v) { sprintBtnHeld = v; },
   get ctrlMode() { return ctrlMode; }, setCtrl,
   get tapTarget() { return tapTarget; },
 };
