@@ -10,3 +10,6 @@ plugins/
 *.keystore
 .gradle/
 build/
+
+C:Users*
+*jobs.json
