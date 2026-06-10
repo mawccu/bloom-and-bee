@@ -52,6 +52,7 @@ jobs:
           android {
             compileSdkVersion 33
             buildToolsVersion '33.0.2'
+            namespace 'com.malek.bloomandbee'
             defaultConfig {
               applicationId 'com.malek.bloomandbee'
               minSdkVersion 24
