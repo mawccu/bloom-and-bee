@@ -190,6 +190,27 @@
     font-weight:700; font-size:15px; pointer-events:none;
     animation:hintBob 1.4s ease-in-out infinite; transition:opacity .5s; }
 
+  /* ---------- malek win overlay ---------- */
+  #malekWin { position:fixed; inset:0; z-index:40; background:rgba(100,60,130,.55);
+    display:flex; align-items:center; justify-content:center; padding:18px; }
+  #malekWin.hidden { display:none !important; }
+  #malekWinBox { background:linear-gradient(160deg,#fff8ff 0%,#f0e0ff 100%); border-radius:30px;
+    padding:28px 22px 24px; width:min(400px,94vw);
+    box-shadow:0 14px 55px rgba(130,60,190,.38);
+    display:flex; flex-direction:column; align-items:center; gap:14px;
+    animation:winPop .45s cubic-bezier(.18,1.45,.5,1) both; }
+  @keyframes winPop { from { transform:scale(.65) translateY(40px); opacity:0; } to { transform:none; opacity:1; } }
+  #malekWinTitle { font-size:clamp(24px,7.5vw,42px); font-weight:800; color:#7a4f6d;
+    text-align:center; line-height:1.15; }
+  #malekWinSub { font-size:15px; color:#a06a8c; font-weight:700; text-align:center; line-height:1.6; }
+  #malekWinChat { display:flex; gap:12px; align-items:flex-start; width:100%;
+    background:rgba(255,255,255,.82); border-radius:18px; padding:14px 16px; }
+  #malekWinAva { width:56px; height:56px; min-width:56px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center; font-size:32px;
+    background:linear-gradient(180deg,#9ad0ff,#5aa8f0); border:3px solid #fff;
+    box-shadow:0 4px 14px rgba(90,168,240,.4); }
+  #malekWinMsg { font-size:17px; font-weight:700; color:#6d5a78; line-height:1.4; padding-top:5px; }
+
   /* ---------- save modal ---------- */
   #saveModal { position:fixed; inset:0; z-index:50; background:rgba(100,60,130,.72);
     display:flex; align-items:center; justify-content:center; padding:18px; }
@@ -280,6 +301,19 @@
   <div id="bestLine" class="statSmall hidden"></div>
   <div class="credit">made with 💕 by Malek, for Ranooma</div>
   <button id="saveBtn" class="tog" style="margin-top:4px;font-size:13px;padding:6px 16px">💾 Save / Restore progress</button>
+</div>
+
+<!-- Malek win celebration -->
+<div id="malekWin" class="hidden">
+  <div id="malekWinBox">
+    <div id="malekWinTitle"></div>
+    <div id="malekWinSub"></div>
+    <div id="malekWinChat">
+      <div id="malekWinAva">🧑🏻‍💻</div>
+      <div id="malekWinMsg"></div>
+    </div>
+    <button id="malekWinOk" class="btn">Okay! 🎁</button>
+  </div>
 </div>
 
 <!-- Save modal -->
@@ -1851,6 +1885,7 @@ function startGame(fromLevel) {
   startCountdown(() => { state = 'playing'; if (ctrlMode === 'fixed') showFixedJoy(); });
 }
 
+let _winShopData = null;
 function levelWon() {
   state = 'won'; winT = 0;
   const bonus = Math.round(timeLeft) * 5;
@@ -1860,21 +1895,23 @@ function levelWon() {
   best = Math.max(best, score); store.set('best', best);
   bestLvl = Math.max(bestLvl, level); store.set('bestlvl', bestLvl);
   sfx.win();
-  malekSay(null, choice(MALEK_PRAISE));
   endMalekUlt();
   clearFlowers(true); clearPickups(); crowHide();
   const pos = girl.position.clone().setY(1.5);
   burst(pos, FLOWER_COLORS, 26, 3.4, 2.6, 1.1, 1.2);
   hideJoy();
+  _winShopData = {
+    title: cfg.rush ? `Golden Rush done! ✨` : `Level ${level} clear! 🎉`,
+    sub: `⏱️ +${bonus} time bonus · 🌸 +${petalBonus} petals · 💗 +1 heart`,
+    nextLevel: level + 1,
+  };
   setTimeout(() => {
     if (state !== 'won') return;
-    $('lvlTitle').textContent = cfg.rush ? `Golden Rush done! ✨` : `Level ${level} clear! 🎉`;
-    $('lvlSub').innerHTML = `⏱️ +${bonus} time bonus · 🌸 +${petalBonus} petals · 💗 +1 heart`;
-    renderShop();
-    $('nextBtn').textContent = `Level ${level + 1} ➜`;
-    $('nextPreview').innerHTML = previewLine(level + 1);
-    $('levelScreen').classList.remove('hidden');
-  }, 1500);
+    $('malekWinTitle').textContent = _winShopData.title;
+    $('malekWinSub').innerHTML = _winShopData.sub;
+    $('malekWinMsg').textContent = choice(MALEK_PRAISE);
+    $('malekWin').classList.remove('hidden');
+  }, 900);
 }
 function previewLine(n) {
   const c = levelCfg(n);
@@ -1925,6 +1962,7 @@ function toMenu() {
 function hideAllScreens() {
   ['titleScreen', 'levelScreen', 'overScreen', 'pauseScreen'].forEach(id => $(id).classList.add('hidden'));
   $('saveModal').classList.add('hidden');
+  $('malekWin').classList.add('hidden');
   $('hint').classList.add('hidden');
   $('housePrompt').classList.add('hidden');
   housePromptVisible = false;
@@ -2253,6 +2291,18 @@ $('loadSaveBtn').addEventListener('click', () => {
 });
 
 /* ============================== UI wiring ============================== */
+$('malekWinOk').addEventListener('click', () => {
+  sfx.click();
+  $('malekWin').classList.add('hidden');
+  if (!_winShopData) return;
+  $('lvlTitle').textContent = _winShopData.title;
+  $('lvlSub').innerHTML = _winShopData.sub;
+  renderShop();
+  $('nextBtn').textContent = `Level ${_winShopData.nextLevel} ➜`;
+  $('nextPreview').innerHTML = previewLine(_winShopData.nextLevel);
+  $('levelScreen').classList.remove('hidden');
+  _winShopData = null;
+});
 $('playBtn').addEventListener('click', () => { initAudio(); sfx.click(); startGame(1); });
 $('nextBtn').addEventListener('click', () => { initAudio(); sfx.click(); startGame(level + 1); });
 $('againBtn').addEventListener('click', () => { initAudio(); sfx.click(); startGame(1); });
