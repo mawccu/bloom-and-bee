@@ -1,0 +1,2969 @@
+import * as THREE from 'three';
+
+/* ============================== helpers ============================== */
+const rand = (a, b) => a + Math.random() * (b - a);
+const choice = a => a[Math.floor(Math.random() * a.length)];
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const $ = id => document.getElementById(id);
+function lerpAngle(a, b, t) {
+  let d = ((b - a + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+  return a + d * t;
+}
+const easeOutBack = t => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
+function lam(c, opts = {}) { return new THREE.MeshLambertMaterial({ color: c, ...opts }); }
+function bas(c, opts = {}) { return new THREE.MeshBasicMaterial({ color: c, ...opts }); }
+/* ============================== profiles ============================== */
+const PROFILE_KEY = 'bloombee_profile';
+const PROFILE_DATA_KEYS = ['best','bestlvl','curlevel','hd','snd','chime','ctrl','dress','hair','intRug','intBed','intVase'];
+let profileId = localStorage.getItem(PROFILE_KEY) || '';
+const nsKey = k => profileId ? `bloombee_${profileId}_${k}` : 'bloombee_' + k;
+const store = {
+  get: (k, d) => { const v = localStorage.getItem(nsKey(k)); return v === null ? d : v; },
+  set: (k, v) => localStorage.setItem(nsKey(k), v),
+};
+function setProfile(id) {
+  id = id.trim().slice(0, 24);
+  if (!id) return false;
+  if (!localStorage.getItem(PROFILE_KEY)) {
+    // first-ever profile pick: bring along any pre-profile saves so progress isn't lost
+    PROFILE_DATA_KEYS.forEach(k => {
+      const legacy = localStorage.getItem('bloombee_' + k);
+      if (legacy !== null) {
+        localStorage.setItem(`bloombee_${id}_${k}`, legacy);
+        localStorage.removeItem('bloombee_' + k);
+      }
+    });
+  }
+  localStorage.setItem(PROFILE_KEY, id);
+  location.reload();
+  return true;
+}
+
+/* ============================== renderer / scene ============================== */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+let hdOn = store.get('hd', '1') === '1';
+function applyQuality() { renderer.setPixelRatio(hdOn ? Math.min(devicePixelRatio, 2) : 1); renderer.setSize(innerWidth, innerHeight); }
+applyQuality();
+renderer.domElement.className = 'game3d';
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const skyCanvas = document.createElement('canvas'); skyCanvas.width = 2; skyCanvas.height = 512;
+const skyTex = new THREE.CanvasTexture(skyCanvas); skyTex.colorSpace = THREE.SRGBColorSpace;
+scene.background = skyTex;
+scene.fog = new THREE.Fog(0xdcf0fb, 55, 160);
+
+const SKIES = {
+  noon:    { stops: ['#9ed9ff', '#d6f0ff', '#ffeaf5'], fog: 0xdcf0fb, hemi: 0xd8edff, ground: 0xb2dba0 },
+  morning: { stops: ['#ffd2a8', '#ffe9d0', '#fff7ec'], fog: 0xffeeda, hemi: 0xffe9cf, ground: 0xc4dba0 },
+  sunset:  { stops: ['#ff9fc0', '#ffd0c0', '#ffe8da'], fog: 0xffe0d8, hemi: 0xffd8e2, ground: 0xbcd49c },
+  rush:    { stops: ['#ffe18f', '#fff0c0', '#fffae6'], fog: 0xfff2cc, hemi: 0xfff0c0, ground: 0xc8dd9a },
+};
+function paintSky(sk) {
+  const ctx = skyCanvas.getContext('2d');
+  const g = ctx.createLinearGradient(0, 0, 0, 512);
+  g.addColorStop(0, sk.stops[0]); g.addColorStop(0.55, sk.stops[1]); g.addColorStop(1, sk.stops[2]);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, 2, 512);
+  skyTex.needsUpdate = true;
+  scene.fog.color.setHex(sk.fog);
+  hemiLight.color.setHex(sk.hemi);
+  hemiLight.groundColor.setHex(sk.ground);
+}
+
+const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.1, 320);
+function fitCamera() {
+  camera.aspect = innerWidth / innerHeight;
+  camera.fov = camera.aspect < 0.8 ? 68 : 58;
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); fitCamera(); });
+fitCamera();
+
+const hemiLight = new THREE.HemisphereLight(0xd8edff, 0xb2dba0, 1.3);
+scene.add(hemiLight);
+const sunLight = new THREE.DirectionalLight(0xfff2d8, 1.0);
+sunLight.position.set(-12, 20, 8);
+scene.add(sunLight);
+paintSky(SKIES.noon);
+
+/* ============================== audio ============================== */
+let AC = null, soundOn = store.get('snd', '1') === '1', chimesOn = store.get('chime', '1') === '1';
+function initAudio() {
+  if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
+  if (AC && AC.state === 'suspended') AC.resume();
+}
+function tone(f, dur = 0.15, type = 'sine', vol = 0.15, delay = 0, slideTo = 0) {
+  if (!soundOn || !AC) return;
+  const t0 = AC.currentTime + delay;
+  const o = AC.createOscillator(), g = AC.createGain();
+  o.type = type; o.frequency.setValueAtTime(f, t0);
+  if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t0 + dur);
+  g.gain.setValueAtTime(0, t0);
+  g.gain.linearRampToValueAtTime(vol, t0 + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  o.connect(g); g.connect(AC.destination);
+  o.start(t0); o.stop(t0 + dur + 0.05);
+}
+const sfx = {
+  pick(c) { const n = [523, 587, 659, 784, 880, 1047]; const f = n[Math.min(c - 1, 5)] || 523;
+    tone(f, 0.12, 'triangle', 0.18); tone(f * 1.5, 0.18, 'sine', 0.09, 0.05); },
+  gold() { tone(880, 0.1, 'triangle', 0.16); tone(1175, 0.1, 'triangle', 0.16, 0.08); tone(1568, 0.3, 'sine', 0.15, 0.16); },
+  rainbow() { [659, 784, 988, 1175, 1568].forEach((f, i) => tone(f, 0.14, 'triangle', 0.15, i * 0.07)); },
+  bee() { tone(220, 0.32, 'sawtooth', 0.12, 0, 105); tone(150, 0.25, 'square', 0.05, 0.06); },
+  buzz() { tone(170, 0.2, 'sawtooth', 0.05, 0, 200); },
+  shield() { tone(523, 0.1, 'triangle', 0.15); tone(784, 0.22, 'sine', 0.14, 0.07); },
+  swat() { tone(520, 0.16, 'sawtooth', 0.1, 0, 180); tone(900, 0.08, 'sine', 0.08, 0.02); },
+  swatHit() { tone(700, 0.08, 'square', 0.1); tone(950, 0.12, 'square', 0.09, 0.06); },
+  crow() { tone(740, 0.1, 'square', 0.07, 0, 480); tone(700, 0.1, 'square', 0.06, 0.14, 460); },
+  fly() { tone(1047, 0.09, 'sine', 0.12); tone(1319, 0.09, 'sine', 0.12, 0.07); tone(1568, 0.22, 'sine', 0.12, 0.14); },
+  clover() { tone(660, 0.08, 'square', 0.09); tone(880, 0.08, 'square', 0.09, 0.06); tone(1320, 0.16, 'square', 0.08, 0.12); },
+  heart() { tone(784, 0.12, 'sine', 0.16); tone(1047, 0.25, 'sine', 0.15, 0.1); },
+  gift() { [523, 659, 880, 1319].forEach((f, i) => tone(f, 0.12, 'triangle', 0.13, i * 0.06)); },
+  nom() { tone(390, 0.08, 'square', 0.08); tone(320, 0.1, 'square', 0.08, 0.08); },
+  buy() { tone(784, 0.09, 'triangle', 0.16); tone(1175, 0.16, 'triangle', 0.15, 0.07); },
+  msg() { tone(880, 0.07, 'sine', 0.08); tone(1175, 0.1, 'sine', 0.07, 0.06); },
+  win() { [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.22, 'triangle', 0.15, i * 0.12)); tone(1319, 0.5, 'sine', 0.13, 0.5); },
+  lose() { [392, 330, 262, 196].forEach((f, i) => tone(f, 0.3, 'triangle', 0.13, i * 0.18)); },
+  click() { tone(660, 0.07, 'sine', 0.12); },
+  poof() { tone(320, 0.18, 'sine', 0.06, 0, 140); },
+  count(go) { tone(go ? 880 : 523, 0.14, 'triangle', 0.14); },
+};
+/* ============================== meadow world ============================== */
+const FIELD_R = 44;
+// no-walk / no-spawn zones: ponds (ellipses) + cottage (circle)
+const OBSTACLES = [
+  { x: 20, z: -16, rx: 7, rz: 5, pond: true },
+  { x: -24, z: -22, rx: 4.5, rz: 3.5, pond: true },
+  { x: -26, z: 20, rx: 3.4, rz: 3.4, pond: false },
+];
+function inObstacle(x, z, pad = 1.12) {
+  for (const o of OBSTACLES) {
+    const dx = (x - o.x) / o.rx, dz = (z - o.z) / o.rz;
+    if (dx * dx + dz * dz < pad * pad) return o;
+  }
+  return null;
+}
+function pushOut(pos, o, pad = 1.13) {
+  const dx = (pos.x - o.x) / o.rx, dz = (pos.z - o.z) / o.rz;
+  const d = Math.hypot(dx, dz) || 0.001;
+  pos.x = o.x + dx / d * o.rx * pad;
+  pos.z = o.z + dz / d * o.rz * pad;
+}
+
+scene.add(new THREE.Mesh(new THREE.CircleGeometry(130, 48), lam(0x93d483)).rotateX(-Math.PI / 2));
+const playDisc = new THREE.Mesh(new THREE.CircleGeometry(FIELD_R + 2.5, 64), lam(0xa9e394));
+playDisc.rotation.x = -Math.PI / 2; playDisc.position.y = 0.01;
+scene.add(playDisc);
+
+// ponds + lily pads
+for (const o of OBSTACLES) {
+  if (!o.pond) continue;
+  const rim = new THREE.Mesh(new THREE.CircleGeometry(1, 32), lam(0xd8c8a0));
+  rim.scale.set(o.rx + 0.7, o.rz + 0.6, 1);
+  rim.rotation.x = -Math.PI / 2; rim.position.set(o.x, 0.02, o.z);
+  scene.add(rim);
+  const water = new THREE.Mesh(new THREE.CircleGeometry(1, 32), lam(0x8fd4e8));
+  water.scale.set(o.rx, o.rz, 1);
+  water.rotation.x = -Math.PI / 2; water.position.set(o.x, 0.03, o.z);
+  scene.add(water);
+  for (let i = 0; i < 4; i++) {
+    const a = rand(0, Math.PI * 2), r = rand(0.3, 0.75);
+    const pad = new THREE.Mesh(new THREE.CircleGeometry(rand(0.35, 0.55), 12), lam(0x55b06a));
+    pad.rotation.x = -Math.PI / 2;
+    pad.position.set(o.x + Math.cos(a) * o.rx * r, 0.05, o.z + Math.sin(a) * o.rz * r);
+    scene.add(pad);
+    if (i < 2) {
+      const fl = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6), lam(0xfff3f8));
+      fl.position.copy(pad.position).y = 0.14; scene.add(fl);
+    }
+  }
+}
+// duck paddles in the big pond
+const duck = (() => {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.32, 12, 10), lam(0xffe066));
+  body.scale.set(1, 0.8, 1.25); g.add(body);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.18, 10, 8), lam(0xffe066));
+  head.position.set(0, 0.34, 0.3); g.add(head);
+  const beak = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.16, 8), lam(0xff9430));
+  beak.rotation.x = Math.PI / 2; beak.position.set(0, 0.32, 0.47); g.add(beak);
+  [-1, 1].forEach(s => {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.035, 6, 5), bas(0x3a2a2a));
+    eye.position.set(s * 0.09, 0.4, 0.42); g.add(eye);
+  });
+  g.position.set(OBSTACLES[0].x, 0.18, OBSTACLES[0].z);
+  scene.add(g);
+  return g;
+})();
+
+// Ranooma's cottage 🏡
+{
+  const o = OBSTACLES[2];
+  const c = new THREE.Group();
+  const base = new THREE.Mesh(new THREE.BoxGeometry(4.2, 2.6, 3.6), lam(0xfff0dc));
+  base.position.y = 1.3; c.add(base);
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(3.4, 2.2, 4), lam(0xff9ec6));
+  roof.position.y = 3.7; roof.rotation.y = Math.PI / 4; c.add(roof);
+  const chimney = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.1, 0.5), lam(0xd8a07a));
+  chimney.position.set(1.1, 4.1, 0.5); c.add(chimney);
+  const door = new THREE.Mesh(new THREE.BoxGeometry(0.95, 1.6, 0.12), lam(0xb97a4e));
+  door.position.set(0, 0.8, 1.81); c.add(door);
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 5), lam(0xffd24a));
+  knob.position.set(0.3, 0.8, 1.9); c.add(knob);
+  [-1.3, 1.3].forEach(x => {
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.85, 0.1), lam(0xffffff));
+    frame.position.set(x, 1.55, 1.82); c.add(frame);
+    const glass = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.65, 0.12), lam(0xafe0f5));
+    glass.position.set(x, 1.55, 1.83); c.add(glass);
+  });
+  // window flower boxes
+  [-1.3, 1.3].forEach(x => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.18, 0.22), lam(0xb97a4e));
+    box.position.set(x, 1.05, 1.9); c.add(box);
+    for (let i = -1; i <= 1; i++) {
+      const fl = new THREE.Mesh(new THREE.SphereGeometry(0.09, 6, 5), lam(choice([0xff8fb7, 0xffd24a, 0xc9a0ff])));
+      fl.position.set(x + i * 0.26, 1.2, 1.92); c.add(fl);
+    }
+  });
+  c.position.set(o.x, 0, o.z);
+  c.lookAt(0, 0, 0);
+  scene.add(c);
+  // stepping stones toward the meadow
+  for (let i = 1; i <= 4; i++) {
+    const st = new THREE.Mesh(new THREE.CircleGeometry(0.42, 10), lam(0xcfd4dc));
+    st.rotation.x = -Math.PI / 2;
+    const t = i / 4;
+    st.position.set(o.x * (1 - t) + o.x * 0.5 * t - t * 2, 0.02, o.z * (1 - t) + o.z * 0.5 * t);
+    st.position.x = o.x - (o.x / Math.hypot(o.x, o.z)) * (3.6 + i * 1.1);
+    st.position.z = o.z - (o.z / Math.hypot(o.x, o.z)) * (3.6 + i * 1.1);
+    scene.add(st);
+  }
+}
+
+// tulip garden patch (decorative)
+{
+  const cx = 12, cz = 28;
+  for (let gx = 0; gx < 4; gx++) for (let gz = 0; gz < 3; gz++) {
+    const x = cx + gx * 1.1 - 1.65, z = cz + gz * 1.1 - 1.1;
+    const tg = new THREE.Group();
+    const st = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.04, 0.5, 5), lam(0x5cba6a));
+    st.position.y = 0.25; tg.add(st);
+    const col = choice([0xff5e7a, 0xffd24a, 0xc9a0ff, 0xff9430]);
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2;
+      const p = new THREE.Mesh(new THREE.SphereGeometry(0.1, 6, 5), lam(col));
+      p.position.set(Math.cos(a) * 0.07, 0.56, Math.sin(a) * 0.07);
+      p.scale.set(0.7, 1.4, 0.7); tg.add(p);
+    }
+    tg.position.set(x + rand(-0.15, 0.15), 0, z + rand(-0.15, 0.15));
+    scene.add(tg);
+  }
+  for (let i = 0; i < 10; i++) { // little fence posts
+    const a = (i / 10) * Math.PI * 2;
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.5, 6), lam(0xd8b48a));
+    post.position.set(cx + Math.cos(a) * 3, 0.25, cz + Math.sin(a) * 2.4);
+    scene.add(post);
+  }
+}
+
+// grass tufts
+{
+  const geo = new THREE.ConeGeometry(0.07, 0.34, 5);
+  const inst = new THREE.InstancedMesh(geo, lam(0x76c87e), 700);
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
+  const col = new THREE.Color();
+  let placed = 0, guard = 0;
+  while (placed < 700 && guard++ < 5000) {
+    const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * (FIELD_R + 1.5);
+    const x = Math.cos(a) * r, z = Math.sin(a) * r;
+    if (inObstacle(x, z)) continue;
+    e.set(rand(-0.2, 0.2), rand(0, Math.PI), rand(-0.2, 0.2)); q.setFromEuler(e);
+    m.compose(new THREE.Vector3(x, 0.15, z), q, new THREE.Vector3(1, rand(0.7, 1.5), 1));
+    inst.setMatrixAt(placed, m);
+    inst.setColorAt(placed, col.setHSL(0.33, 0.5, rand(0.45, 0.6)));
+    placed++;
+  }
+  scene.add(inst);
+}
+
+// boundary bushes
+{
+  const bushMat = [lam(0x6fc97c), lam(0x82d68e), lam(0x5fbf70)];
+  for (let i = 0; i < 56; i++) {
+    const a = (i / 56) * Math.PI * 2 + rand(-0.04, 0.04);
+    const b = new THREE.Mesh(new THREE.SphereGeometry(rand(0.8, 1.3), 10, 8), choice(bushMat));
+    b.position.set(Math.cos(a) * (FIELD_R + 2.3), 0.4, Math.sin(a) * (FIELD_R + 2.3));
+    b.scale.y = 0.72; scene.add(b);
+    if (Math.random() < 0.5) {
+      const f = new THREE.Mesh(new THREE.SphereGeometry(0.11, 6, 5), lam(choice([0xff9ec6, 0xfff3f8, 0xffd24a])));
+      f.position.copy(b.position); f.position.y += b.scale.y * 1.05; f.position.x += rand(-0.4, 0.4);
+      scene.add(f);
+    }
+  }
+}
+
+// trees
+function makeTree(x, z, s) {
+  const t = new THREE.Group();
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.3, 1.4, 8), lam(0x9a6b4f));
+  trunk.position.y = 0.7; t.add(trunk);
+  const greens = [0x7ed489, 0x93dd9b, 0x6ecb7d];
+  [[0, 1.9, 0, 1.0], [-0.55, 1.55, 0.2, 0.7], [0.5, 1.6, -0.2, 0.65], [0.1, 2.4, 0.1, 0.6]].forEach(([fx, fy, fz, fr], i) => {
+    const s2 = new THREE.Mesh(new THREE.SphereGeometry(fr, 10, 8), lam(greens[i % 3]));
+    s2.position.set(fx, fy, fz); t.add(s2);
+  });
+  for (let i = 0; i < 5; i++) {
+    const b = new THREE.Mesh(new THREE.SphereGeometry(0.09, 6, 5), lam(0xffb7d5));
+    const a = Math.random() * Math.PI * 2;
+    b.position.set(Math.cos(a) * 0.85, 1.8 + rand(-0.3, 0.6), Math.sin(a) * 0.85);
+    t.add(b);
+  }
+  t.position.set(x, 0, z); t.scale.setScalar(s);
+  scene.add(t);
+}
+for (let i = 0; i < 16; i++) {
+  const a = (i / 16) * Math.PI * 2 + rand(-0.15, 0.15);
+  const r = FIELD_R + rand(5, 13);
+  makeTree(Math.cos(a) * r, Math.sin(a) * r, rand(1.5, 2.6));
+}
+[[-18, 10], [-6, -32], [28, 16], [4, 36], [36, -6], [-36, -6]].forEach(([x, z]) => {
+  if (!inObstacle(x, z, 1.5)) makeTree(x, z, rand(1.1, 1.5));
+});
+
+// mushrooms + rocks
+function makeMushroom(x, z) {
+  const g = new THREE.Group();
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.2, 8), lam(0xfff4ea));
+  stem.position.y = 0.1; g.add(stem);
+  const cap = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), lam(0xff7d7d));
+  cap.position.y = 0.18; g.add(cap);
+  for (let i = 0; i < 3; i++) {
+    const d = new THREE.Mesh(new THREE.SphereGeometry(0.03, 5, 4), bas(0xffffff));
+    const a = rand(0, Math.PI * 2);
+    d.position.set(Math.cos(a) * 0.1, 0.28, Math.sin(a) * 0.1); g.add(d);
+  }
+  g.position.set(x, 0, z); scene.add(g);
+}
+for (let i = 0; i < 16; i++) {
+  const a = rand(0, Math.PI * 2), r = rand(8, FIELD_R - 1);
+  const x = Math.cos(a) * r, z = Math.sin(a) * r;
+  if (!inObstacle(x, z)) makeMushroom(x, z);
+}
+for (let i = 0; i < 12; i++) {
+  const a = rand(0, Math.PI * 2), r = rand(6, FIELD_R - 1);
+  const x = Math.cos(a) * r, z = Math.sin(a) * r;
+  if (inObstacle(x, z)) continue;
+  const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(rand(0.2, 0.45), 0), lam(0xc8cdd6));
+  rock.position.set(x, 0.1, z);
+  rock.scale.y = 0.6; rock.rotation.y = rand(0, 3); scene.add(rock);
+}
+
+// sky clouds
+const clouds = [];
+for (let i = 0; i < 9; i++) {
+  const c = new THREE.Group();
+  const m = bas(0xffffff, { transparent: true, opacity: 0.92, fog: false });
+  const n = 3 + Math.floor(Math.random() * 2);
+  for (let j = 0; j < n; j++) {
+    const p = new THREE.Mesh(new THREE.SphereGeometry(rand(1, 1.8), 10, 8), m);
+    p.position.set(j * 1.4 - n * 0.7, rand(-0.2, 0.3), rand(-0.4, 0.4));
+    p.scale.y = 0.62; c.add(p);
+  }
+  c.position.set(rand(-70, 70), rand(16, 26), rand(-65, 12));
+  c.userData.speed = rand(0.25, 0.6);
+  scene.add(c); clouds.push(c);
+}
+
+// smiling sun
+{
+  const sun = new THREE.Group();
+  sun.add(new THREE.Mesh(new THREE.SphereGeometry(3.2, 18, 14), bas(0xffe48a, { fog: false })));
+  const face = bas(0x9a6a3a, { fog: false });
+  [[-1, 0.5], [1, 0.5]].forEach(([sx, sy]) => {
+    const e = new THREE.Mesh(new THREE.SphereGeometry(0.25, 8, 6), face);
+    e.position.set(sx, sy, 3.0); sun.add(e);
+  });
+  const smile = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.1, 6, 14, Math.PI), face);
+  smile.position.set(0, -0.2, 3.0); smile.rotation.z = Math.PI; sun.add(smile);
+  [[-1.5, -0.1], [1.5, -0.1]].forEach(([sx, sy]) => {
+    const b = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 6), bas(0xffb38a, { fog: false }));
+    b.position.set(sx, sy, 2.95); sun.add(b);
+  });
+  sun.position.set(-42, 36, -60);
+  sun.lookAt(0, 0, 0);
+  scene.add(sun);
+}
+
+const shadowGeo = new THREE.CircleGeometry(1, 16);
+function makeBlobShadow(scale) {
+  const s = new THREE.Mesh(shadowGeo, bas(0x3a7a3a, { transparent: true, opacity: 0.22, depthWrite: false }));
+  s.rotation.x = -Math.PI / 2; s.position.y = 0.025; s.scale.setScalar(scale);
+  scene.add(s); return s;
+}
+
+/* ============================== Ranooma 🌸 ============================== */
+const DRESS_COLORS = [0xff9ec6, 0xc9a0ff, 0x8fc9ff, 0x9fe6b8, 0xffbf8e, 0xff7a8c];
+const HAIR_COLORS = [0x6b4a3a, 0x2e2a2a, 0xf0c269, 0xa3502e, 0xffb7d5];
+const girl = new THREE.Group();
+const girlRefs = {};
+{
+  const skin = lam(0xffdcc2);
+  const dressMat = lam(DRESS_COLORS[+store.get('dress', 0)] || DRESS_COLORS[0]);
+  const hairMat = lam(HAIR_COLORS[+store.get('hair', 0)] || HAIR_COLORS[0]);
+  girlRefs.dressMat = dressMat; girlRefs.hairMat = hairMat;
+
+  girlRefs.legs = [];
+  [-1, 1].forEach(side => {
+    const hip = new THREE.Group(); hip.position.set(side * 0.13, 0.4, 0);
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.075, 0.32, 8), skin);
+    leg.position.y = -0.16; hip.add(leg);
+    const shoe = new THREE.Mesh(new THREE.SphereGeometry(0.105, 8, 6), lam(0xd95f87));
+    shoe.position.set(0, -0.33, 0.04); shoe.scale.set(1, 0.7, 1.25); hip.add(shoe);
+    girl.add(hip); girlRefs.legs.push(hip);
+  });
+
+  const dress = new THREE.Mesh(new THREE.ConeGeometry(0.55, 1.0, 18), dressMat);
+  dress.position.y = 0.85; girl.add(dress);
+  [[0.5, 0.55], [1.6, 0.7], [-0.8, 0.62], [2.7, 0.5], [-2.1, 0.72]].forEach(([a, y]) => {
+    const t = (y - 0.35) / 1.0, r = 0.56 * (1 - t);
+    const d = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 5), lam(0xfff3f8));
+    d.position.set(Math.cos(a) * r, y, Math.sin(a) * r); girl.add(d);
+  });
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.42, 18, 14), skin);
+  head.position.y = 1.62; girl.add(head);
+
+  const hair = new THREE.Mesh(new THREE.SphereGeometry(0.46, 16, 12), hairMat);
+  hair.position.set(0, 1.72, -0.07); girl.add(hair);
+  girlRefs.pigtails = [];
+  [-1, 1].forEach(side => {
+    const pig = new THREE.Group(); pig.position.set(side * 0.46, 1.68, -0.05);
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.17, 10, 8), hairMat);
+    ball.position.set(side * 0.07, -0.06, 0); pig.add(ball);
+    const band = new THREE.Mesh(new THREE.SphereGeometry(0.075, 8, 6), lam(0xff6fa5));
+    pig.add(band);
+    girl.add(pig); girlRefs.pigtails.push(pig);
+  });
+  {
+    const fg = new THREE.Group(); fg.position.set(0.28, 2.02, 0.12); fg.rotation.z = -0.4;
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2;
+      const p = new THREE.Mesh(new THREE.SphereGeometry(0.055, 6, 5), lam(0xfffbe8));
+      p.position.set(Math.cos(a) * 0.07, 0, Math.sin(a) * 0.07); p.scale.y = 0.5; fg.add(p);
+    }
+    fg.add(new THREE.Mesh(new THREE.SphereGeometry(0.045, 6, 5), lam(0xffd24a)));
+    girl.add(fg);
+  }
+
+  const eyeMat = bas(0x3a2a2a);
+  [-1, 1].forEach(side => {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.058, 8, 6), eyeMat);
+    eye.position.set(side * 0.16, 1.66, 0.37); eye.scale.set(1, 1.35, 0.5); girl.add(eye);
+    const glint = new THREE.Mesh(new THREE.SphereGeometry(0.02, 6, 5), bas(0xffffff));
+    glint.position.set(side * 0.14, 1.7, 0.405); girl.add(glint);
+    const blush = new THREE.Mesh(new THREE.SphereGeometry(0.065, 8, 6), lam(0xffb3c1));
+    blush.position.set(side * 0.28, 1.57, 0.3); blush.scale.set(1, 0.6, 0.4); girl.add(blush);
+  });
+  const smile = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.014, 6, 12, Math.PI), eyeMat);
+  smile.position.set(0, 1.55, 0.4); smile.rotation.z = Math.PI; girl.add(smile);
+
+  girlRefs.arms = [];
+  [-1, 1].forEach(side => {
+    const sh = new THREE.Group(); sh.position.set(side * 0.45, 1.28, 0);
+    const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.07, 0.34, 4, 8), skin);
+    arm.position.y = -0.24; sh.add(arm);
+    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 6), skin);
+    hand.position.y = -0.46; sh.add(hand);
+    girl.add(sh); girlRefs.arms.push(sh);
+  });
+  girlRefs.arms[1].rotation.x = -0.55;
+
+  const basket = new THREE.Group(); basket.position.set(0, -0.62, 0);
+  const bMat = lam(0xc98a4b);
+  const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.21, 0.16, 0.17, 10, 1, true), bMat);
+  cup.material.side = THREE.DoubleSide; basket.add(cup);
+  const bottom = new THREE.Mesh(new THREE.CircleGeometry(0.16, 10), bMat);
+  bottom.rotation.x = Math.PI / 2; bottom.position.y = -0.085; basket.add(bottom);
+  const handle = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.022, 6, 12, Math.PI), bMat);
+  handle.position.y = 0.08; basket.add(handle);
+  girlRefs.basketBlooms = [];
+  [[-0.07, 0xff8fb7], [0.06, 0xc9a0ff], [0, 0x8fc9ff]].forEach(([x, c], i) => {
+    const bloom = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 5), lam(c));
+    bloom.position.set(x, 0.06, (i - 1) * 0.06); bloom.visible = false;
+    basket.add(bloom); girlRefs.basketBlooms.push(bloom);
+  });
+  girlRefs.arms[1].add(basket);
+  girlRefs.basket = basket;
+
+  const stars = new THREE.Group(); stars.position.y = 2.35;
+  for (let i = 0; i < 3; i++) {
+    const st = new THREE.Mesh(new THREE.OctahedronGeometry(0.09, 0), bas(0xffd24a));
+    const a = (i / 3) * Math.PI * 2;
+    st.position.set(Math.cos(a) * 0.42, 0, Math.sin(a) * 0.42); stars.add(st);
+  }
+  stars.visible = false; girl.add(stars);
+  girlRefs.stars = stars;
+
+  const bubble = new THREE.Mesh(new THREE.SphereGeometry(1.05, 16, 12),
+    bas(0xff9ec6, { transparent: true, opacity: 0.16, depthWrite: false }));
+  bubble.position.y = 1.1; bubble.visible = false;
+  girl.add(bubble);
+  girlRefs.bubble = bubble;
+
+  scene.add(girl);
+}
+const girlShadow = makeBlobShadow(0.55);
+/* ============================== particles ============================== */
+const PARTS = [];
+const partGeo = new THREE.OctahedronGeometry(0.07, 0);
+function burst(pos, colors, n = 10, spd = 2.4, up = 1.4, life = 0.7, size = 1) {
+  const palette = Array.isArray(colors) ? colors : [colors];
+  for (let i = 0; i < n; i++) {
+    let p = PARTS.find(p => !p.active);
+    if (!p) {
+      if (PARTS.length > 120) return;
+      p = { mesh: new THREE.Mesh(partGeo, bas(0xffffff, { transparent: true })), active: false, vel: new THREE.Vector3(), life: 0, maxLife: 1 };
+      scene.add(p.mesh); PARTS.push(p);
+    }
+    p.active = true; p.maxLife = p.life = life * rand(0.7, 1.3);
+    p.mesh.visible = true;
+    p.mesh.position.copy(pos);
+    p.mesh.material.color.set(choice(palette));
+    p.mesh.material.opacity = 1;
+    p.mesh.scale.setScalar(size * rand(0.6, 1.4));
+    p.vel.set(rand(-1, 1), rand(0.2, 1), rand(-1, 1)).normalize().multiplyScalar(spd * rand(0.5, 1.2));
+    p.vel.y += up;
+  }
+}
+function updateParticles(dt) {
+  for (const p of PARTS) {
+    if (!p.active) continue;
+    p.life -= dt;
+    if (p.life <= 0) { p.active = false; p.mesh.visible = false; continue; }
+    p.vel.y -= 6.5 * dt;
+    p.mesh.position.addScaledVector(p.vel, dt);
+    p.mesh.rotation.x += dt * 6; p.mesh.rotation.y += dt * 8;
+    p.mesh.material.opacity = p.life / p.maxLife;
+  }
+}
+
+// ambient drifting blossom petals 🌸
+const driftPetals = [];
+{
+  const pGeo = new THREE.SphereGeometry(0.09, 6, 5);
+  for (let i = 0; i < 14; i++) {
+    const m = new THREE.Mesh(pGeo, lam(choice([0xffb7d5, 0xffd0e4, 0xfff0f6])));
+    m.scale.set(1, 0.25, 0.7);
+    scene.add(m);
+    driftPetals.push({ m, off: rand(0, 99), x: rand(-12, 12), z: rand(-12, 12), y: rand(0, 7), spin: rand(2, 5) });
+  }
+}
+
+/* ============================== floating text ============================== */
+const ftLayer = $('ft');
+const tmpV = new THREE.Vector3();
+function floatText(worldPos, str, cls = '') {
+  tmpV.copy(worldPos).project(camera);
+  if (tmpV.z > 1) return;
+  const el = document.createElement('div');
+  el.className = 'ft ' + cls;
+  el.textContent = str;
+  el.style.left = ((tmpV.x * 0.5 + 0.5) * innerWidth) + 'px';
+  el.style.top = ((-tmpV.y * 0.5 + 0.5) * innerHeight) + 'px';
+  ftLayer.appendChild(el);
+  setTimeout(() => el.remove(), 1150);
+}
+
+/* ============================== flowers ============================== */
+const FLOWER_COLORS = [0xff8fb7, 0xc9a0ff, 0x8fc9ff, 0xfff6fb, 0xffb46e, 0xff7a9c];
+const RAINBOW = [0xff5e7a, 0xffb14a, 0xffe24a, 0x5ed47a, 0x5aa8f0, 0x9d5eff];
+const GEO = {
+  stem: new THREE.CylinderGeometry(0.035, 0.045, 0.55, 6),
+  leaf: new THREE.SphereGeometry(0.09, 6, 5),
+  petal: new THREE.SphereGeometry(0.13, 8, 6),
+  center: new THREE.SphereGeometry(0.1, 8, 6),
+  ring: new THREE.CircleGeometry(0.34, 16),
+};
+const stemMat = lam(0x5cba6a), leafMat = lam(0x6fcf7a);
+const flowers = [];
+
+function freeSpot(minGirl = 3, minOther = 2) {
+  for (let tries = 0; tries < 18; tries++) {
+    const a = rand(0, Math.PI * 2), r = Math.sqrt(Math.random()) * (FIELD_R - 1.8);
+    const x = Math.cos(a) * r, z = Math.sin(a) * r;
+    if (inObstacle(x, z)) continue;
+    if (Math.hypot(x - girl.position.x, z - girl.position.z) < minGirl) continue;
+    if (!flowers.every(f => Math.hypot(x - f.g.position.x, z - f.g.position.z) > minOther)) continue;
+    return { x, z };
+  }
+  return null;
+}
+
+function spawnFlower(kind) { // 'normal' | 'golden' | 'rainbow'
+  const spot = freeSpot();
+  if (!spot) return;
+  const golden = kind === 'golden', rainbow = kind === 'rainbow';
+  const tulip = !golden && !rainbow && Math.random() < 0.4;
+  const g = new THREE.Group();
+  g.position.set(spot.x, 0, spot.z);
+  const stem = new THREE.Mesh(GEO.stem, stemMat); stem.position.y = 0.275; g.add(stem);
+  [-1, 1].forEach(s => {
+    const leaf = new THREE.Mesh(GEO.leaf, leafMat);
+    leaf.position.set(s * 0.1, 0.22, 0); leaf.scale.set(1.3, 0.35, 0.6); leaf.rotation.z = s * 0.5;
+    g.add(leaf);
+  });
+  const head = new THREE.Group(); head.position.y = 0.55; g.add(head);
+  const color = golden ? 0xffd24a : rainbow ? 0xffffff : choice(FLOWER_COLORS);
+  const petalMat = new THREE.MeshLambertMaterial({ color, emissive: golden ? 0x8a6200 : rainbow ? 0x303030 : 0x000000 });
+  const centerMat = lam(golden || rainbow ? 0xfff3b0 : 0xffe066);
+  const petalMats = [];
+  if (tulip) {
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2;
+      const p = new THREE.Mesh(GEO.petal, petalMat);
+      p.position.set(Math.cos(a) * 0.08, 0.08, Math.sin(a) * 0.08);
+      p.scale.set(0.75, 1.5, 0.75);
+      head.add(p);
+    }
+  } else {
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const mat = rainbow ? new THREE.MeshLambertMaterial({ color: RAINBOW[i], emissive: 0x202020 }) : petalMat;
+      if (rainbow) petalMats.push(mat);
+      const p = new THREE.Mesh(GEO.petal, mat);
+      p.position.set(Math.cos(a) * 0.17, 0, Math.sin(a) * 0.17);
+      p.scale.set(1, 0.35, 0.55); p.rotation.y = -a;
+      head.add(p);
+    }
+    const center = new THREE.Mesh(GEO.center, centerMat);
+    center.scale.y = 0.6; center.position.y = 0.02; head.add(center);
+  }
+  const ring = new THREE.Mesh(GEO.ring, bas(golden ? 0xffe27a : rainbow ? 0xffc9e8 : 0xffffff,
+    { transparent: true, opacity: 0.22, depthWrite: false }));
+  ring.rotation.x = -Math.PI / 2; ring.position.y = 0.035; g.add(ring);
+
+  g.scale.setScalar(0.001);
+  scene.add(g);
+  flowers.push({
+    g, head, ring, petalMat, centerMat, petalMats, golden, rainbow,
+    baseColor: new THREE.Color(color),
+    born: gameT, ageBoost: 0, carried: false,
+    lifespan: cfg.lifespan * (golden ? 0.75 : rainbow ? 1.5 : 1),
+    popK: 0, wiltK: 0, phase: rand(0, 9), picked: false, pickT: 0, fromPos: null,
+  });
+}
+function rollFlowerKind() {
+  if (cfg.rush) return 'golden';
+  const r = Math.random();
+  if (r < 0.018) return 'rainbow';
+  if (r < 0.018 + stat.goldenChance()) return 'golden';
+  return 'normal';
+}
+function removeFlower(f) {
+  scene.remove(f.g);
+  f.petalMat.dispose(); f.centerMat.dispose(); f.ring.material.dispose();
+  if (f.petalMats) f.petalMats.forEach(m => m.dispose());
+  flowers.splice(flowers.indexOf(f), 1);
+}
+function clearFlowers(withPoof) {
+  while (flowers.length) {
+    const f = flowers[0];
+    if (withPoof) burst(f.g.position.clone().setY(0.6), [f.baseColor.getHex(), 0xffffff], 6, 2.2, 1.8, 0.8);
+    removeFlower(f);
+  }
+}
+const openFlowers = () => flowers.filter(f => !f.picked && !f.carried);
+
+/* ============================== bees & wasps ============================== */
+const beeMats = {
+  body: lam(0xffce3a), black: lam(0x35302e),
+  waspBody: lam(0xff9430), waspDark: lam(0x4a342a),
+  wing: bas(0xffffff, { transparent: true, opacity: 0.62 }),
+};
+const bees = [];
+function spawnBee(wasp) {
+  const g = new THREE.Group();
+  const bodyMat = wasp ? beeMats.waspBody : beeMats.body;
+  const darkMat = wasp ? beeMats.waspDark : beeMats.black;
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 10), bodyMat);
+  body.scale.z = 1.35; g.add(body);
+  [-0.05, -0.17].forEach(z => {
+    const band = new THREE.Mesh(new THREE.SphereGeometry(0.225, 12, 10), darkMat);
+    band.scale.set(1, 1, 0.22); band.position.z = z; g.add(band);
+  });
+  const headB = new THREE.Mesh(new THREE.SphereGeometry(0.15, 10, 8), darkMat);
+  headB.position.z = 0.3; g.add(headB);
+  [-1, 1].forEach(s => {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.045, 6, 5), bas(0xffffff));
+    eye.position.set(s * 0.07, 0.05, 0.42); g.add(eye);
+  });
+  const sting = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.16, 6), darkMat);
+  sting.rotation.x = -Math.PI / 2; sting.position.z = -0.37; g.add(sting);
+  const wings = [];
+  [-1, 1].forEach(s => {
+    const piv = new THREE.Group(); piv.position.set(s * 0.06, 0.19, -0.02);
+    const w = new THREE.Mesh(new THREE.SphereGeometry(0.17, 8, 6), beeMats.wing);
+    w.scale.set(0.6, 0.12, 1.05); w.position.x = s * 0.15; piv.add(w);
+    g.add(piv); wings.push(piv);
+  });
+  if (wasp) g.scale.setScalar(0.85);
+  let a = rand(0, Math.PI * 2), r = rand(12, FIELD_R - 5);
+  for (let t = 0; t < 10; t++) {
+    const x = Math.cos(a) * r, z = Math.sin(a) * r;
+    if (Math.hypot(x - girl.position.x, z - girl.position.z) > 12) break;
+    a = rand(0, Math.PI * 2); r = rand(12, FIELD_R - 5);
+  }
+  g.position.set(Math.cos(a) * r, 1.1, Math.sin(a) * r);
+  scene.add(g);
+  bees.push({
+    g, wings, wasp: !!wasp, shadow: makeBlobShadow(0.28),
+    state: 'guard', t: rand(0, 10), guardPos: new THREE.Vector3(), retarget: 0,
+    cooldown: rand(1, 3), chaseT: 0, fleeT: 0, faceA: rand(0, 6),
+  });
+}
+function clearBees() {
+  for (const b of bees) { scene.remove(b.g); scene.remove(b.shadow); }
+  bees.length = 0;
+}
+
+/* ============================== bunny ============================== */
+const bunny = (() => {
+  const g = new THREE.Group();
+  const white = lam(0xfdfbf7);
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.32, 12, 10), white);
+  body.scale.set(1, 0.85, 1.2); body.position.y = 0.3; g.add(body);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 10), white);
+  head.position.set(0, 0.62, 0.28); g.add(head);
+  [-1, 1].forEach(s => {
+    const ear = new THREE.Mesh(new THREE.CapsuleGeometry(0.055, 0.3, 4, 6), white);
+    ear.position.set(s * 0.1, 0.95, 0.2); ear.rotation.x = -0.15; ear.rotation.z = s * 0.12; g.add(ear);
+    const inner = new THREE.Mesh(new THREE.CapsuleGeometry(0.025, 0.2, 4, 6), lam(0xffc9d8));
+    inner.position.set(s * 0.1, 0.95, 0.24); inner.rotation.x = -0.15; inner.rotation.z = s * 0.12; g.add(inner);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.04, 6, 5), bas(0x3a2a2a));
+    eye.position.set(s * 0.1, 0.68, 0.46); g.add(eye);
+  });
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.035, 6, 5), lam(0xff8fa8));
+  nose.position.set(0, 0.6, 0.5); g.add(nose);
+  const tail = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6), white);
+  tail.position.set(0, 0.32, -0.38); g.add(tail);
+  [-1, 1].forEach(s => {
+    const foot = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), white);
+    foot.position.set(s * 0.16, 0.08, 0.15); foot.scale.set(1, 0.6, 1.5); g.add(foot);
+  });
+  g.visible = false;
+  scene.add(g);
+  return { g, shadow: makeBlobShadow(0.4), active: false, state: 'idle', t: 0,
+    hopFrom: new THREE.Vector3(), hopTo: new THREE.Vector3(), hopK: 1, target: null, fleeN: 0, nibbleT: 0 };
+})();
+bunny.shadow.visible = false;
+
+function bunnyEnter() {
+  bunny.active = true; bunny.g.visible = true; bunny.shadow.visible = true;
+  const a = rand(0, Math.PI * 2);
+  bunny.g.position.set(Math.cos(a) * (FIELD_R - 2), 0, Math.sin(a) * (FIELD_R - 2));
+  bunny.state = 'idle'; bunny.t = 0.5; bunny.hopK = 1; bunny.target = null; bunny.fleeN = 0;
+}
+function bunnyHide() { bunny.active = false; bunny.g.visible = false; bunny.shadow.visible = false; }
+function bunnyScare() {
+  if (!bunny.active || bunny.state === 'flee') return;
+  bunny.state = 'flee'; bunny.fleeN = 4; bunny.t = 0;
+  floatText(bunny.g.position.clone().setY(1.3), '!', 'bad');
+}
+
+function bunnyHopToward(p, dist) {
+  bunny.hopFrom.copy(bunny.g.position);
+  tmpA.copy(p).sub(bunny.g.position).setY(0);
+  const d = tmpA.length();
+  if (d > 0.01) {
+    tmpA.normalize();
+    bunny.g.rotation.y = Math.atan2(tmpA.x, tmpA.z);
+    bunny.hopTo.copy(bunny.g.position).addScaledVector(tmpA, Math.min(dist, d));
+    const pr = Math.hypot(bunny.hopTo.x, bunny.hopTo.z);
+    if (pr > FIELD_R) { bunny.hopTo.x *= FIELD_R / pr; bunny.hopTo.z *= FIELD_R / pr; }
+    if (inObstacle(bunny.hopTo.x, bunny.hopTo.z)) bunny.hopTo.copy(bunny.hopFrom);
+  } else bunny.hopTo.copy(bunny.g.position);
+  bunny.hopK = 0;
+}
+function updateBunny(dt) {
+  if (!bunny.active) return;
+  const distGirl = Math.hypot(bunny.g.position.x - girl.position.x, bunny.g.position.z - girl.position.z);
+  if (bunny.hopK < 1) {
+    bunny.hopK = Math.min(1, bunny.hopK + dt / 0.34);
+    bunny.g.position.lerpVectors(bunny.hopFrom, bunny.hopTo, bunny.hopK);
+    bunny.g.position.y = Math.sin(bunny.hopK * Math.PI) * 0.5;
+    bunny.shadow.position.set(bunny.g.position.x, 0.026, bunny.g.position.z);
+    return;
+  }
+  bunny.g.position.y = 0;
+  bunny.shadow.position.set(bunny.g.position.x, 0.026, bunny.g.position.z);
+  if (bunny.state !== 'flee' && distGirl < 2.8) bunnyScare();
+  bunny.t -= dt;
+  if (bunny.t > 0) return;
+  if (bunny.state === 'flee') {
+    tmpB.copy(bunny.g.position).sub(girl.position).setY(0);
+    if (tmpB.lengthSq() < 0.01) tmpB.set(1, 0, 0);
+    tmpB.normalize().multiplyScalar(8).add(bunny.g.position);
+    bunnyHopToward(tmpB, 2.0);
+    bunny.t = 0.12;
+    if (--bunny.fleeN <= 0) { bunny.state = 'idle'; bunny.t = rand(0.8, 1.6); }
+    return;
+  }
+  const open = openFlowers();
+  if (!bunny.target || !open.includes(bunny.target)) {
+    bunny.target = open.length ? choice(open) : null;
+    if (!bunny.target) {
+      const a = rand(0, Math.PI * 2);
+      tmpB.set(bunny.g.position.x + Math.cos(a) * 3, 0, bunny.g.position.z + Math.sin(a) * 3);
+      bunnyHopToward(tmpB, 1.4); bunny.t = rand(0.4, 0.9);
+      return;
+    }
+  }
+  const distT = Math.hypot(bunny.g.position.x - bunny.target.g.position.x, bunny.g.position.z - bunny.target.g.position.z);
+  if (distT < 0.8) {
+    if (bunny.state !== 'nibble') { bunny.state = 'nibble'; bunny.nibbleT = cfg.nibble; }
+    bunny.nibbleT -= 0.1; bunny.t = 0.1;
+    bunny.g.rotation.z = Math.sin(gameT * 18) * 0.07;
+    if (bunny.nibbleT <= 0) {
+      burst(bunny.target.g.position.clone().setY(0.5), [0x9fe6a0, 0xfdfbf7, bunny.target.baseColor.getHex()], 8, 2, 1.5, 0.7);
+      floatText(bunny.target.g.position.clone().setY(1), 'nom! 🐰', 'bad');
+      sfx.nom();
+      removeFlower(bunny.target);
+      bunny.target = null; bunny.state = 'idle'; bunny.t = rand(0.5, 1);
+      bunny.g.rotation.z = 0;
+    }
+  } else {
+    bunny.state = 'hop';
+    bunnyHopToward(bunny.target.g.position, 1.5);
+    bunny.t = 0.16;
+  }
+}
+
+/* ============================== rain cloud ============================== */
+const rainCloud = (() => {
+  const g = new THREE.Group();
+  const m = lam(0xb9c4cd);
+  [[0, 0, 0, 1.5], [-1.3, -0.2, 0.2, 1.05], [1.3, -0.2, -0.1, 1.1], [0.3, 0.55, 0.2, 1.0]].forEach(([x, y, z, r]) => {
+    const p = new THREE.Mesh(new THREE.SphereGeometry(r, 12, 9), m);
+    p.position.set(x, y, z); p.scale.y = 0.7; g.add(p);
+  });
+  const face = bas(0x5a6470);
+  [-1, 1].forEach(s => {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 6), face);
+    eye.position.set(s * 0.5, 0.1, 1.42); eye.scale.set(1, 0.5, 0.4); g.add(eye);
+  });
+  const mouth = new THREE.Mesh(new THREE.TorusGeometry(0.18, 0.045, 6, 12, Math.PI), face);
+  mouth.position.set(0, -0.42, 1.42); g.add(mouth);
+  g.position.y = 7;
+  g.visible = false;
+  scene.add(g);
+  const zone = new THREE.Mesh(new THREE.CircleGeometry(3.6, 24),
+    bas(0x6a7a90, { transparent: true, opacity: 0.13, depthWrite: false }));
+  zone.rotation.x = -Math.PI / 2; zone.position.y = 0.028; zone.visible = false;
+  scene.add(zone);
+  const drops = [];
+  const dropGeo = new THREE.BoxGeometry(0.03, 0.35, 0.03);
+  const dropMat = bas(0x9fc8e8, { transparent: true, opacity: 0.7 });
+  for (let i = 0; i < 16; i++) {
+    const d = new THREE.Mesh(dropGeo, dropMat);
+    d.visible = false; scene.add(d); drops.push(d);
+  }
+  return { g, zone, drops, active: false, target: new THREE.Vector3(), R: 3.6 };
+})();
+function cloudEnter() {
+  rainCloud.active = true; rainCloud.g.visible = true; rainCloud.zone.visible = true;
+  const a = rand(0, Math.PI * 2);
+  rainCloud.g.position.set(Math.cos(a) * 22, 7, Math.sin(a) * 22);
+  cloudNewTarget();
+  rainCloud.drops.forEach(d => {
+    d.visible = true;
+    d.position.set(rainCloud.g.position.x + rand(-2.5, 2.5), rand(1, 6.4), rainCloud.g.position.z + rand(-2.5, 2.5));
+  });
+}
+function cloudHide() {
+  rainCloud.active = false; rainCloud.g.visible = false; rainCloud.zone.visible = false;
+  rainCloud.drops.forEach(d => d.visible = false);
+}
+function cloudNewTarget() {
+  if (Math.random() < 0.5) rainCloud.target.set(girl.position.x + rand(-6, 6), 7, girl.position.z + rand(-6, 6));
+  else { const a = rand(0, Math.PI * 2), r = rand(5, FIELD_R - 6); rainCloud.target.set(Math.cos(a) * r, 7, Math.sin(a) * r); }
+}
+function girlInCloud() {
+  return rainCloud.active &&
+    Math.hypot(girl.position.x - rainCloud.g.position.x, girl.position.z - rainCloud.g.position.z) < rainCloud.R;
+}
+function updateCloud(dt) {
+  if (!rainCloud.active) return;
+  tmpA.copy(rainCloud.target).sub(rainCloud.g.position);
+  if (tmpA.length() < 1) cloudNewTarget();
+  else { tmpA.normalize(); rainCloud.g.position.addScaledVector(tmpA, cfg.cloudSpeed * dt); }
+  rainCloud.zone.position.set(rainCloud.g.position.x, 0.028, rainCloud.g.position.z);
+  for (const d of rainCloud.drops) {
+    d.position.y -= 9 * dt;
+    if (d.position.y < 0.3) {
+      d.position.set(rainCloud.g.position.x + rand(-2.5, 2.5), 6.4, rainCloud.g.position.z + rand(-2.5, 2.5));
+    }
+  }
+}
+
+/* ============================== pickups (clover / heart / gift) ============================== */
+const pickups = [];
+function spawnPickup(type) {
+  const spot = freeSpot(4, 1.5);
+  if (!spot) return;
+  const g = new THREE.Group();
+  if (type === 'clover') {
+    const m = lam(0x4fae5c, { emissive: 0x0a3a14 });
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+      const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 6), m);
+      leaf.position.set(Math.cos(a) * 0.13, 0.55, Math.sin(a) * 0.13);
+      leaf.scale.set(1, 0.4, 1); g.add(leaf);
+    }
+    const st = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 0.5, 6), stemMat);
+    st.position.y = 0.27; g.add(st);
+  } else if (type === 'heart') {
+    const m = lam(0xff6fa5, { emissive: 0x4a1228 });
+    [-1, 1].forEach(s => {
+      const lobe = new THREE.Mesh(new THREE.SphereGeometry(0.15, 10, 8), m);
+      lobe.position.set(s * 0.1, 0.72, 0); g.add(lobe);
+    });
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.32, 4), m);
+    tip.rotation.x = Math.PI; tip.rotation.y = Math.PI / 4;
+    tip.position.y = 0.52; g.add(tip);
+  } else { // gift box 🎁
+    const box = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.34, 0.42), lam(0xff8fb7, { emissive: 0x3a1020 }));
+    box.position.y = 0.45; g.add(box);
+    const lid = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.12, 0.48), lam(0xc9a0ff));
+    lid.position.y = 0.66; g.add(lid);
+    const ribbonV = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.48, 0.44), lam(0xfff3b0));
+    ribbonV.position.y = 0.48; g.add(ribbonV);
+    const ribbonH = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.48, 0.1), lam(0xfff3b0));
+    ribbonH.position.y = 0.48; g.add(ribbonH);
+    const bow = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), lam(0xfff3b0));
+    bow.position.y = 0.76; bow.scale.set(1.4, 0.7, 1.4); g.add(bow);
+  }
+  const ring = new THREE.Mesh(GEO.ring, bas(type === 'clover' ? 0xa0e8a0 : type === 'heart' ? 0xffc9e8 : 0xfff3b0,
+    { transparent: true, opacity: 0.25, depthWrite: false }));
+  ring.rotation.x = -Math.PI / 2; ring.position.y = 0.035; g.add(ring);
+  g.position.set(spot.x, 0, spot.z);
+  g.scale.setScalar(0.001);
+  scene.add(g);
+  pickups.push({ g, type, born: gameT, popK: 0, phase: rand(0, 9) });
+}
+function removePickup(p) {
+  scene.remove(p.g);
+  pickups.splice(pickups.indexOf(p), 1);
+}
+function clearPickups() { while (pickups.length) removePickup(pickups[0]); }
+
+/* ============================== butterfly ============================== */
+const butterfly = (() => {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.045, 0.22, 4, 6), lam(0x7a5fb0));
+  body.rotation.x = Math.PI / 2; g.add(body);
+  const wingMat = lam(0xff9ed2, { side: THREE.DoubleSide, emissive: 0x551a3a });
+  const wings = [];
+  [-1, 1].forEach(s => {
+    const piv = new THREE.Group();
+    const w = new THREE.Mesh(new THREE.CircleGeometry(0.24, 12), wingMat);
+    w.rotation.x = -Math.PI / 2; w.scale.set(1, 1, 1.5); w.position.x = s * 0.2; piv.add(w);
+    const w2 = new THREE.Mesh(new THREE.CircleGeometry(0.14, 10), wingMat);
+    w2.rotation.x = -Math.PI / 2; w2.position.set(s * 0.14, 0.005, -0.22); piv.add(w2);
+    g.add(piv); wings.push(piv);
+  });
+  g.visible = false; scene.add(g);
+  return { g, wings, active: false, from: new THREE.Vector3(), to: new THREE.Vector3(), t: 0, dur: 9 };
+})();
+function spawnButterfly() {
+  const a = rand(0, Math.PI * 2);
+  butterfly.from.set(Math.cos(a) * (FIELD_R - 1), 1.2, Math.sin(a) * (FIELD_R - 1));
+  const a2 = a + Math.PI + rand(-0.9, 0.9);
+  butterfly.to.set(Math.cos(a2) * (FIELD_R - 1), 1.2, Math.sin(a2) * (FIELD_R - 1));
+  butterfly.t = 0; butterfly.dur = rand(11, 14);
+  butterfly.active = true; butterfly.g.visible = true;
+  butterfly.g.position.copy(butterfly.from);
+}
+function hideButterfly() { butterfly.active = false; butterfly.g.visible = false; }
+
+/* ============================== crow (flower thief) ============================== */
+const crow = (() => {
+  const g = new THREE.Group();
+  const dark = lam(0x3a3f4a);
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.3, 12, 10), dark);
+  body.scale.z = 1.35; g.add(body);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.19, 10, 8), dark);
+  head.position.set(0, 0.16, 0.38); g.add(head);
+  const beak = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.24, 8), lam(0xff9430));
+  beak.rotation.x = Math.PI / 2; beak.position.set(0, 0.14, 0.6); g.add(beak);
+  [-1, 1].forEach(s => {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.045, 6, 5), bas(0xffe066));
+    eye.position.set(s * 0.09, 0.24, 0.48); g.add(eye);
+  });
+  const tail = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.4, 6), dark);
+  tail.rotation.x = Math.PI / 2; tail.position.set(0, 0.05, -0.5); tail.scale.y = 0.5; g.add(tail);
+  const wings = [];
+  [-1, 1].forEach(s => {
+    const piv = new THREE.Group(); piv.position.set(s * 0.12, 0.1, 0);
+    const w = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.05, 0.3), dark);
+    w.position.x = s * 0.32; piv.add(w);
+    g.add(piv); wings.push(piv);
+  });
+  g.visible = false; scene.add(g);
+  return { g, wings, shadow: makeBlobShadow(0.34), active: false, state: 'fly',
+    target: null, exit: new THREE.Vector3(), faceA: 0 };
+})();
+crow.shadow.visible = false;
+function crowEnter() {
+  const open = openFlowers();
+  if (!open.length) return;
+  crow.active = true; crow.g.visible = true; crow.shadow.visible = true;
+  crow.state = 'fly';
+  crow.target = choice(open);
+  const a = rand(0, Math.PI * 2);
+  crow.g.position.set(Math.cos(a) * (FIELD_R + 8), 6, Math.sin(a) * (FIELD_R + 8));
+  crow.exit.set(Math.cos(a + Math.PI + rand(-0.6, 0.6)) * (FIELD_R + 10), 6, Math.sin(a + Math.PI + rand(-0.6, 0.6)) * (FIELD_R + 10));
+  sfx.crow();
+}
+function crowHide() {
+  if (crow.active && crow.state === 'carry' && crow.target && flowers.includes(crow.target)) {
+    crow.target.carried = false;
+  }
+  crow.active = false; crow.g.visible = false; crow.shadow.visible = false; crow.target = null;
+}
+function crowDrop() {
+  if (crow.state !== 'carry' || !crow.target || !flowers.includes(crow.target)) return false;
+  const f = crow.target;
+  f.carried = false;
+  let x = clamp(crow.g.position.x, -FIELD_R + 2, FIELD_R - 2);
+  let z = clamp(crow.g.position.z, -FIELD_R + 2, FIELD_R - 2);
+  const pos = { x, z };
+  const ob = inObstacle(x, z);
+  if (ob) { pushOut(pos, ob); x = pos.x; z = pos.z; }
+  f.g.position.set(x, 0, z);
+  f.born = gameT - f.lifespan * 0.2; // give it some life back
+  f.ageBoost = 0;
+  crow.target = null;
+  crow.state = 'fleeUp';
+  score += 10; hudDirty = true;
+  floatText(crow.g.position.clone(), '+10 😤', 'gold');
+  sfx.swatHit();
+  return true;
+}
+function updateCrow(dt) {
+  if (!crow.active) return;
+  const flap = Math.sin(animT * 16) * 0.7;
+  crow.wings[0].rotation.z = flap; crow.wings[1].rotation.z = -flap;
+  let target = null, speed = 6;
+  if (crow.state === 'fly') {
+    if (!crow.target || !flowers.includes(crow.target) || crow.target.picked || crow.target.carried) {
+      const open = openFlowers();
+      if (!open.length) { crow.state = 'fleeUp'; }
+      else crow.target = choice(open);
+    }
+    if (crow.state === 'fly' && crow.target) {
+      target = tmpB.set(crow.target.g.position.x, 1.0, crow.target.g.position.z);
+      const d = crow.g.position.distanceTo(target);
+      if (d < 0.6) {
+        crow.target.carried = true;
+        crow.state = 'carry';
+        sfx.crow();
+        floatText(crow.g.position.clone().setY(1.6), 'mine! 🐦‍⬛', 'bad');
+      }
+    }
+  }
+  if (crow.state === 'carry') {
+    target = tmpB.copy(crow.exit);
+    speed = 5;
+    if (crow.target && flowers.includes(crow.target)) {
+      crow.target.g.position.set(crow.g.position.x, Math.max(0, crow.g.position.y - 0.9), crow.g.position.z);
+    }
+    if (Math.hypot(crow.g.position.x, crow.g.position.z) > FIELD_R + 7) {
+      if (crow.target && flowers.includes(crow.target)) removeFlower(crow.target);
+      crow.target = null;
+      crowHide();
+      return;
+    }
+  } else if (crow.state === 'fleeUp') {
+    target = tmpB.copy(crow.exit); target.y = 9;
+    speed = 8;
+    if (Math.hypot(crow.g.position.x, crow.g.position.z) > FIELD_R + 7) { crowHide(); return; }
+  }
+  if (target) {
+    tmpA.copy(target).sub(crow.g.position);
+    const d = tmpA.length();
+    if (d > 0.05) {
+      tmpA.normalize();
+      crow.g.position.addScaledVector(tmpA, Math.min(speed * dt, d));
+      crow.faceA = lerpAngle(crow.faceA, Math.atan2(tmpA.x, tmpA.z), 1 - Math.exp(-7 * dt));
+      crow.g.rotation.y = crow.faceA;
+    }
+  }
+  crow.shadow.position.set(crow.g.position.x, 0.027, crow.g.position.z);
+}
+
+/* ============================== effect meshes ============================== */
+const guideArrow = (() => {
+  const g = new THREE.Group();
+  const cone = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.42, 8), bas(0xff7ab0, { transparent: true, opacity: 0.85 }));
+  cone.rotation.x = Math.PI / 2;
+  g.add(cone);
+  g.visible = false;
+  scene.add(g);
+  return g;
+})();
+const tapMarker = (() => {
+  const m = new THREE.Mesh(new THREE.TorusGeometry(0.45, 0.06, 8, 20), bas(0xff7ab0, { transparent: true, opacity: 0.8 }));
+  m.rotation.x = -Math.PI / 2; m.position.y = 0.06; m.visible = false;
+  scene.add(m); return m;
+})();
+const swatRing = (() => {
+  const m = new THREE.Mesh(new THREE.TorusGeometry(1, 0.07, 8, 28), bas(0xffb7d5, { transparent: true, opacity: 0 }));
+  m.rotation.x = -Math.PI / 2; m.visible = false;
+  scene.add(m); return m;
+})();
+
+/* ============================== Malek — the ULTIMATE 😎💻 ============================== */
+// Muscular dev hero: buff, handsome & aura. Lands on the ground beside Ranooma to show off.
+const malekChar = (() => {
+  const g = new THREE.Group();
+  const skin = lam(0xe6b58c), top = lam(0x6a3ad0), pants = lam(0x2b3350), dark = lam(0x231f33), belt = lam(0x3a2f5a);
+  const armRefs = [], legRefs = [];
+  // thick legs with a slight power stance
+  [-1, 1].forEach(s => {
+    const hip = new THREE.Group(); hip.position.set(s * 0.2, 0.92, 0);
+    const thigh = new THREE.Mesh(new THREE.CapsuleGeometry(0.17, 0.4, 5, 10), pants);
+    thigh.position.y = -0.28; hip.add(thigh);
+    const calf = new THREE.Mesh(new THREE.CapsuleGeometry(0.14, 0.36, 5, 10), pants);
+    calf.position.set(0, -0.62, 0.02); hip.add(calf);
+    const shoe = new THREE.Mesh(new THREE.SphereGeometry(0.19, 10, 7), lam(0xf2f2f2));
+    shoe.position.set(0, -0.85, 0.1); shoe.scale.set(1, 0.6, 1.5); hip.add(shoe);
+    g.add(hip); legRefs.push(hip);
+  });
+  // waist + belt + V-taper chest
+  const waist = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.34, 0.45, 12), top);
+  waist.position.y = 1.18; g.add(waist);
+  const beltM = new THREE.Mesh(new THREE.CylinderGeometry(0.33, 0.33, 0.12, 12), belt);
+  beltM.position.y = 0.96; g.add(beltM);
+  const chest = new THREE.Mesh(new THREE.SphereGeometry(0.5, 14, 12), top);
+  chest.scale.set(1.28, 0.95, 0.72); chest.position.y = 1.64; g.add(chest);
+  [-1, 1].forEach(s => {
+    const pec = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8), top);
+    pec.position.set(s * 0.21, 1.68, 0.36); pec.scale.set(1, 0.82, 0.6); g.add(pec);
+  });
+  // big deltoids + muscular arms (shoulder + elbow joints for flexing/punching)
+  [-1, 1].forEach(s => {
+    const delt = new THREE.Mesh(new THREE.SphereGeometry(0.23, 10, 8), skin);
+    delt.position.set(s * 0.54, 1.92, 0); g.add(delt);
+    const sh = new THREE.Group(); sh.position.set(s * 0.54, 1.9, 0);
+    const upper = new THREE.Mesh(new THREE.CapsuleGeometry(0.16, 0.32, 5, 10), skin); // bicep
+    upper.position.y = -0.24; sh.add(upper);
+    const elbow = new THREE.Group(); elbow.position.y = -0.46; sh.add(elbow);
+    const fore = new THREE.Mesh(new THREE.CapsuleGeometry(0.125, 0.34, 5, 10), skin);
+    fore.position.y = -0.2; elbow.add(fore);
+    const fist = new THREE.Mesh(new THREE.SphereGeometry(0.155, 10, 8), skin);
+    fist.position.y = -0.42; elbow.add(fist);
+    sh.rotation.z = s * 0.28; // arms rest out over the lats
+    g.add(sh); armRefs.push({ sh, elbow, side: s });
+  });
+  // neck + head
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.17, 0.18, 8), skin);
+  neck.position.y = 2.08; g.add(neck);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.34, 16, 12), skin);
+  head.position.y = 2.4; g.add(head);
+  const hair = new THREE.Mesh(new THREE.SphereGeometry(0.36, 14, 10), dark);
+  hair.position.set(0, 2.52, -0.03); hair.scale.set(1, 0.78, 1); g.add(hair);
+  const fringe = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.15, 0.45), dark);
+  fringe.position.set(0, 2.66, 0.16); fringe.rotation.x = 0.2; g.add(fringe);
+  // handsome eyes, brows + smirk
+  const eyeMatM = bas(0x3a2a2a);
+  [-1, 1].forEach(s => {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.052, 8, 6), eyeMatM);
+    eye.position.set(s * 0.13, 2.43, 0.32); eye.scale.set(1, 1.15, 0.5); g.add(eye);
+    const glint = new THREE.Mesh(new THREE.SphereGeometry(0.018, 6, 5), bas(0xffffff));
+    glint.position.set(s * 0.115, 2.46, 0.345); g.add(glint);
+    const brow = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.035, 0.05), dark);
+    brow.position.set(s * 0.13, 2.5, 0.33); brow.rotation.z = s * -0.12; g.add(brow);
+  });
+  const smirk = new THREE.Mesh(new THREE.TorusGeometry(0.08, 0.018, 6, 10, Math.PI * 0.8), bas(0x6a3a2a));
+  smirk.position.set(0.03, 2.24, 0.31); smirk.rotation.z = Math.PI + 0.5; g.add(smirk);
+  // grounded golden aura ring + soft glow
+  const aura = new THREE.Mesh(new THREE.TorusGeometry(0.85, 0.06, 8, 32),
+    bas(0xffe27a, { transparent: true, opacity: 0.6, fog: false }));
+  aura.rotation.x = -Math.PI / 2; aura.position.y = 0.06; g.add(aura);
+  const glow = new THREE.Mesh(new THREE.SphereGeometry(1.35, 16, 12),
+    bas(0xffd76a, { transparent: true, opacity: 0.1, fog: false, blending: THREE.AdditiveBlending, depthWrite: false }));
+  glow.position.y = 1.4; g.add(glow);
+  g.visible = false;
+  scene.add(g);
+  return { g, aura, glow, arms: armRefs, legs: legRefs, shadow: makeBlobShadow(0.62), landX: 0, landZ: 0 };
+})();
+malekChar.shadow.visible = false;
+function malekRestArms() {
+  malekChar.arms.forEach(a => { a.sh.rotation.set(0, 0, a.side * 0.28); a.elbow.rotation.set(0, 0, 0); });
+}
+function malekFlexPose(amt) {
+  malekChar.arms.forEach(a => {
+    a.sh.rotation.z = a.side * (0.28 + amt * 1.05);  // arms out
+    a.sh.rotation.x = -amt * 0.12;
+    a.elbow.rotation.x = -amt * 2.3;                  // curl up = big biceps
+    a.elbow.rotation.z = 0;
+  });
+}
+// both arms wrap forward and across his front, cradling Ranooma upright against him
+function setCarryArms(mc, k) {
+  mc.arms[0].sh.rotation.z = -0.28 + k * 0.83; mc.arms[0].sh.rotation.x = -k * 0.78; mc.arms[0].elbow.rotation.x = -k * 0.9;
+  mc.arms[1].sh.rotation.z =  0.28 - k * 0.83; mc.arms[1].sh.rotation.x = -k * 0.78; mc.arms[1].elbow.rotation.x = -k * 0.9;
+}
+// while carried, Ranooma's own limbs settle into a relaxed, dangling pose
+function relaxGirlLimbs(dt) {
+  const t = Math.min(1, dt * 8);
+  girlRefs.legs[0].rotation.x += (0 - girlRefs.legs[0].rotation.x) * t;
+  girlRefs.legs[1].rotation.x += (0 - girlRefs.legs[1].rotation.x) * t;
+  girlRefs.arms[0].rotation.x += (0.3 - girlRefs.arms[0].rotation.x) * t;
+  girlRefs.arms[1].rotation.x += (-0.55 - girlRefs.arms[1].rotation.x) * t;
+  girlRefs.pigtails[0].rotation.z *= 0.9; girlRefs.pigtails[1].rotation.z *= 0.9;
+}
+
+const MALEK_ULT_CALL = [
+  "Did somebody call the dev? 😎",
+  "Malek.exe has entered the meadow 💻",
+  "You blew me a kiss? I'm already here, habibti 💋",
+  "Deploying myself to production 🚀",
+];
+const MALEK_ULT_BLAST = [
+  "Check the gains 💪 field's all clear!",
+  "Did you see that, habibti? 😎🔥",
+  "I lift AND I code 💪💻 watch this!",
+  "All yours, my love 💕 happy picking!",
+  "Too easy 😤 flexed the bugs away!",
+];
+
+let malekCharge = 0, malekWasReady = false;
+let ultActive = false, ultPhase = '', ultT = 0, ultDidBlast = false;
+let kissCd = 0, kissAnimT = 0;
+let _ultTriggeredWin = false, _carryTarget = null;
+
+function kissTone() { tone(880, 0.12, 'sine', 0.13); tone(1245, 0.2, 'sine', 0.1, 0.07); }
+function ultInTone() { [330, 440, 587, 784].forEach((f, i) => tone(f, 0.18, 'sawtooth', 0.08, i * 0.06)); }
+function ultBlastTone() { [523, 659, 880, 1175, 1568].forEach((f, i) => tone(f, 0.3, 'triangle', 0.16, i * 0.05)); tone(1976, 0.6, 'sine', 0.13, 0.3); }
+
+function blowKiss() {
+  if (state !== 'playing' || ultActive || stunned > 0 || kissCd > 0) return;
+  kissCd = 0.85; kissAnimT = 0.55;
+  const m = girl.position.clone(); m.y = 1.7;
+  burst(m, [0xff6fa5, 0xff9ec6, 0xffffff], 9, 1.8, 2.4, 1.0, 1.0);
+  floatText(girl.position.clone().setY(2.4), '😘', '');
+  kissTone();
+  if (navigator.vibrate) navigator.vibrate(20);
+  if (malekCharge >= 1) triggerMalekUlt();
+  else floatText(girl.position.clone().setY(2.0), `Malek ${Math.round(malekCharge * 100)}%`, 'time');
+}
+
+function triggerMalekUlt() {
+  ultActive = true; ultPhase = 'drop'; ultT = 0; ultDidBlast = false;
+  _ultTriggeredWin = false; _carryTarget = null;
+  malekCharge = 0; malekWasReady = false;
+  invuln = Math.max(invuln, 99); // stay invincible through the whole ult
+  const mc = malekChar;
+  mc.landX = clamp(girl.position.x + 1.8, -FIELD_R + 2, FIELD_R - 2);
+  mc.landZ = clamp(girl.position.z + 0.5, -FIELD_R + 2, FIELD_R - 2);
+  mc.g.position.set(mc.landX, 10, mc.landZ);
+  mc.g.scale.set(1, 1, 1); mc.g.rotation.set(0, 0, 0);
+  malekRestArms();
+  mc.g.visible = true; mc.shadow.visible = true;
+  $('kissBtn').classList.remove('ready');
+  malek.queue.length = 0; malek.showT = 0;
+  malekSay('ultcall_' + Math.random(), choice(MALEK_ULT_CALL));
+  ultInTone();
+  if (navigator.vibrate) navigator.vibrate([30, 40, 60]);
+}
+
+function _clearEnemies() {
+  const fl = $('flash'); fl.classList.remove('go'); void fl.offsetWidth; fl.classList.add('go');
+  shake = 0.6;
+  burst(malekChar.g.position.clone().setY(0.4), [0xe9dcc0, 0xffffff, 0xffe27a], 22, 4.2, 0.5, 0.7, 1.1);
+  ultBlastTone();
+  for (const b of bees) {
+    burst(b.g.position.clone(), [0xffd24a, 0xfff3b0, 0xffffff], 8, 3.2, 2, 0.6);
+    b.state = 'flee'; b.fleeT = 6; b.cooldown = rand(8, 12);
+  }
+  if (crow.active) { if (crow.state === 'carry') crowDrop(); else crow.state = 'fleeUp'; }
+  if (bunny.active) bunnyScare();
+  if (rainCloud.active) cloudHide();
+  if (navigator.vibrate) navigator.vibrate(80);
+}
+
+function _findNearestFlower() {
+  const open = openFlowers();
+  if (!open.length) return null;
+  let best = null, bestD = Infinity;
+  const px = malekChar.g.position.x, pz = malekChar.g.position.z;
+  for (const f of open) {
+    const d = Math.hypot(f.g.position.x - px, f.g.position.z - pz);
+    if (d < bestD) { bestD = d; best = f; }
+  }
+  return best;
+}
+
+function endMalekUlt() {
+  ultActive = false; ultPhase = ''; ultDidBlast = false;
+  malekChar.g.visible = false; malekChar.shadow.visible = false;
+  girl.rotation.z = 0; girl.rotation.y = 0;
+}
+
+function updateMalekUlt(dt) {
+  if (!ultActive) return;
+  ultT += dt;
+  const mc = malekChar;
+  mc.aura.rotation.z += dt * 1.8;
+  mc.aura.material.opacity = 0.4 + Math.sin(animT * 7) * 0.22;
+  mc.glow.material.opacity = 0.08 + Math.sin(animT * 5) * 0.04;
+  mc.glow.scale.setScalar(1 + Math.sin(animT * 4) * 0.06);
+  mc.shadow.position.set(mc.g.position.x, 0.028, mc.g.position.z);
+
+  /* --- drop from sky --- */
+  if (ultPhase === 'drop') {
+    mc.g.position.y = Math.max(0, mc.g.position.y - 28 * dt);
+    mc.g.rotation.y += dt * 3;
+    mc.shadow.material.opacity = clamp(0.32 - mc.g.position.y * 0.02, 0.05, 0.32);
+    if (mc.g.position.y <= 0.001) {
+      mc.g.position.set(mc.landX, 0, mc.landZ);
+      mc.g.rotation.y = 0;
+      _clearEnemies();
+      ultPhase = 'pickup'; ultT = 0;
+    }
+    return;
+  }
+
+  mc.shadow.material.opacity = 0.3;
+
+  /* --- reach arms out, scoop Ranooma up onto his front, upright --- */
+  if (ultPhase === 'pickup') {
+    mc.g.position.set(mc.landX, 0, mc.landZ); mc.g.scale.set(1, 1, 1);
+    const k = Math.min(1, ultT / 0.5);
+    const ease = k * k * (3 - 2 * k);
+    setCarryArms(mc, ease);
+    // girl rises off the ground, upright, snug against his front, facing the way he faces
+    const fwd = new THREE.Vector3(Math.sin(mc.g.rotation.y), 0, Math.cos(mc.g.rotation.y));
+    girl.position.x += (mc.g.position.x + fwd.x * 0.4 - girl.position.x) * Math.min(1, dt * 9);
+    girl.position.z += (mc.g.position.z + fwd.z * 0.4 - girl.position.z) * Math.min(1, dt * 9);
+    girl.position.y = ease * 0.55;
+    girl.rotation.x = 0; girl.rotation.z = 0;
+    girl.rotation.y = mc.g.rotation.y;
+    relaxGirlLimbs(dt);
+    girl.visible = true;
+    if (ultT > 0.55) {
+      _carryTarget = _findNearestFlower();
+      ultPhase = 'carry'; ultT = 0;
+      malekSay('ultcarry_' + Math.random(), "Hold on tight, ya amar 💕 I've got every flower for you! 🌸");
+    }
+    return;
+  }
+
+  /* --- carry Ranooma upright, zoom to flowers until the level's met --- */
+  if (ultPhase === 'carry') {
+    girl.visible = true;
+    // running legs
+    mc.legs[0].rotation.x = -Math.sin(ultT * 12) * 1.05;
+    mc.legs[1].rotation.x =  Math.sin(ultT * 12) * 1.05;
+    mc.g.position.y = Math.abs(Math.sin(ultT * 12)) * 0.14;
+    mc.g.scale.set(1, 1, 1);
+    setCarryArms(mc, 1);
+
+    if (_carryTarget && !_carryTarget.picked) {
+      const tx = _carryTarget.g.position.x, tz = _carryTarget.g.position.z;
+      const dx = tx - mc.g.position.x, dz = tz - mc.g.position.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist > 0.9) {
+        const sp = 19 * dt;
+        mc.g.position.x += (dx / dist) * sp;
+        mc.g.position.z += (dz / dist) * sp;
+        mc.g.rotation.y = Math.atan2(dx, dz);
+      } else {
+        if (state === 'playing') pickFlower(_carryTarget);
+        // stop collecting the moment the level's flower goal is met
+        _carryTarget = (progress >= need) ? null : _findNearestFlower();
+      }
+    } else {
+      _carryTarget = (progress >= need) ? null : _findNearestFlower();
+    }
+
+    // girl rides upright, tucked against Malek's front, facing the way he runs
+    const fwd = new THREE.Vector3(Math.sin(mc.g.rotation.y), 0, Math.cos(mc.g.rotation.y));
+    girl.position.x = mc.g.position.x + fwd.x * 0.4;
+    girl.position.y = mc.g.position.y + 0.5;
+    girl.position.z = mc.g.position.z + fwd.z * 0.4;
+    girl.rotation.x = 0; girl.rotation.z = 0;
+    girl.rotation.y = mc.g.rotation.y;
+    relaxGirlLimbs(dt);
+
+    // heart trail
+    if (Math.random() < dt * 5)
+      burst(girl.position.clone(), [0xff6fa5, 0xff9ec6, 0xffffff], 2, 1.4, 1.8, 0.5, 0.6);
+
+    if (!_carryTarget) { ultPhase = 'kiss'; ultT = 0; }
+    return;
+  }
+
+  /* --- kiss scene 💋 --- */
+  if (ultPhase === 'kiss') {
+    mc.g.scale.set(1, 1, 1);
+    mc.legs[0].rotation.x *= 0.8; mc.legs[1].rotation.x *= 0.8;
+    mc.g.position.y = 0;
+
+    // both turn to face each other as girl steps down beside Malek
+    mc.g.rotation.y = lerpAngle(mc.g.rotation.y, Math.PI / 2, Math.min(1, dt * 6));
+    girl.rotation.y = lerpAngle(girl.rotation.y, -Math.PI / 2, Math.min(1, dt * 6));
+    girl.position.x += (mc.g.position.x + 0.52 - girl.position.x) * Math.min(1, dt * 5);
+    girl.position.y += (0 - girl.position.y) * Math.min(1, dt * 7);
+    girl.position.z += (mc.g.position.z - 0.08 - girl.position.z) * Math.min(1, dt * 5);
+    girl.visible = true;
+    relaxGirlLimbs(dt);
+
+    // lean toward each other
+    const lean = Math.min(1, ultT / 0.55);
+    girl.rotation.z = -lean * 0.24;
+    mc.g.rotation.z = lean * 0.20;
+
+    // Malek's near arm wraps around girl's back, far arm relaxed at his side
+    mc.arms[0].sh.rotation.z = 0.9;  mc.arms[0].sh.rotation.x = -0.45; mc.arms[0].elbow.rotation.x = -0.6;
+    mc.arms[1].sh.rotation.z = -0.28; mc.arms[1].sh.rotation.x = -0.1; mc.arms[1].elbow.rotation.x = -0.3;
+
+    // continuous heart burst
+    if (Math.random() < dt * 9) {
+      const hp = new THREE.Vector3(
+        (mc.g.position.x + girl.position.x) * 0.5,
+        1.9 + Math.random() * 0.6,
+        (mc.g.position.z + girl.position.z) * 0.5);
+      burst(hp, [0xff4488, 0xff9ec6, 0xffa0cc, 0xffffff], 3, 1.6, 2.4, 0.9, 0.7);
+    }
+
+    // 💋 pop at the moment of the kiss
+    if (ultT > 0.52 && ultT < 0.62) {
+      floatText(new THREE.Vector3(
+        (mc.g.position.x + girl.position.x) * 0.5,
+        2.6,
+        (mc.g.position.z + girl.position.z) * 0.5), '💋', '');
+      kissTone(); kissTone();
+    }
+
+    if (ultT > 2.4) { ultPhase = 'setdown'; ultT = 0; }
+    return;
+  }
+
+  /* --- gently set her down --- */
+  if (ultPhase === 'setdown') {
+    const k = Math.min(1, ultT / 0.4);
+    mc.g.rotation.z = (1 - k) * 0.20;
+    girl.rotation.z = -(1 - k) * 0.24;
+    girl.rotation.y = lerpAngle(girl.rotation.y, 0, Math.min(1, dt * 4));
+    girl.position.y = (1 - k) * 0.15;
+    malekRestArms();
+    girl.visible = true;
+    if (ultT > 0.45) {
+      girl.rotation.z = 0; girl.rotation.y = 0; mc.g.rotation.z = 0; girl.position.y = 0;
+      // trigger the level win if all flowers were collected during carry
+      if (_ultTriggeredWin) {
+        _ultTriggeredWin = false;
+        _doLevelWon(true);   // pass true = don't call endMalekUlt yet
+      }
+      ultPhase = 'leave'; ultT = 0;
+    }
+    return;
+  }
+
+  /* --- heroic exit --- */
+  if (ultPhase === 'leave') {
+    mc.g.position.y += 10 * dt;
+    mc.g.rotation.y += dt * 4;
+    mc.g.scale.multiplyScalar(Math.max(0.001, 1 - dt * 1.1));
+    if (ultT > 0.8) endMalekUlt();
+  }
+}
+
+/* ============================== Malek the dev 💻 (chat) ============================== */
+const malek = { queue: [], shown: {}, showT: 0, gapT: 0 };
+function malekSay(id, text) {
+  if (id && malek.shown[id]) return;
+  if (id) malek.shown[id] = true;
+  if (malek.queue.length > 2) return;
+  malek.queue.push(text);
+}
+const MALEK_PRAISE = [
+  "That's my girl! 😍",
+  "Flawless! I'd hire you as my QA tester 💼🌸",
+  "You make my game look easy 💕",
+  "Another level down! Amazing, ya amar ✨",
+  "I coded this level to be hard… you broke it 😂💘",
+];
+const MALEK_TIPS = [
+  "Golden flowers give triple petals 🌟",
+  "Butterflies give +7 seconds — chase them! 🦋",
+  "Save petals for Speedy Shoes, trust me 👟",
+  "Rainbow flowers are SUPER rare. Grab them!! 🌈",
+  "The Magic Wand makes your swat huge 🪄",
+  "Shield bubble = one free bee mistake 🛡️",
+  "Don't fall in the pond… I didn't code swimming 😅",
+  "Check the minimap, I drew it myself 🗺️",
+];
+function updateMalek(dt) {
+  if (malek.showT > 0) {
+    malek.showT -= dt;
+    if (malek.showT <= 0) { $('malek').classList.remove('show'); malek.gapT = 1.2; }
+    return;
+  }
+  if (malek.gapT > 0) { malek.gapT -= dt; return; }
+  if (malek.queue.length && (state === 'playing' || state === 'count' || state === 'won')) {
+    $('malekTxt').textContent = malek.queue.shift();
+    $('malek').classList.add('show');
+    malek.showT = 5.8;
+    sfx.msg();
+  }
+}
+function malekReset() { malek.queue.length = 0; malek.shown = {}; malek.showT = 0; $('malek').classList.remove('show'); }
+
+/* ============================== upgrades / run state ============================== */
+const UPGRADES = {
+  shoes:  { emoji: '👟', name: 'Speedy Shoes', desc: 'walk faster',         costs: [8, 18, 32] },
+  basket: { emoji: '🧺', name: 'Big Basket',   desc: 'longer pick reach',   costs: [8, 18, 32] },
+  wand:   { emoji: '🪄', name: 'Magic Wand',   desc: 'bigger, faster swat', costs: [10, 20, 34] },
+  charm:  { emoji: '🎀', name: 'Bee Charm',    desc: 'calmer, slower bees', costs: [10, 22, 38] },
+  time:   { emoji: '⏰', name: 'Time Petal',   desc: '+8s every level',     costs: [8, 16, 28] },
+  lucky:  { emoji: '🍀', name: 'Lucky Petal',  desc: 'more golden blooms',  costs: [10, 20, 34] },
+  shield: { emoji: '🛡️', name: 'Petal Shield', desc: 'blocks a sting',      costs: [12, 24, 40] },
+};
+let upg = { shoes: 0, basket: 0, wand: 0, charm: 0, time: 0, lucky: 0, shield: 0 };
+const MAX_HEARTS = 3;
+let hearts = 3, petals = 0, shieldCharges = 0, boostT = 0;
+
+const stat = {
+  speed: () => (6.6 + upg.shoes * 0.6) * (boostT > 0 ? 1.55 : 1) * (girlInCloud() ? 0.55 : 1),
+  pickR: () => 1.35 + upg.basket * 0.3,
+  swatR: () => 2.4 + upg.wand * 0.45,
+  swatCd: () => Math.max(1.0, 2.2 - upg.wand * 0.35),
+  aggro: () => Math.max(2.6, 4.6 - upg.charm * 0.7),
+  chaseDur: () => Math.max(1.8, 3.4 - upg.charm * 0.55),
+  beeSpeedMul: () => 1 - upg.charm * 0.08,
+  goldenChance: () => 0.09 + upg.lucky * 0.04,
+  extraTime: () => upg.time * 8,
+};
+
+/* ============================== game state ============================== */
+let state = 'menu';
+let level = 1, score = 0, best = +store.get('best', 0), bestLvl = +store.get('bestlvl', 0);
+let savedLevel = Math.max(1, parseInt(store.get('curlevel', '1'), 10) || 1);
+let totalPicked = 0;
+let progress = 0, need = 10, timeLeft = 55, timeMax = 55;
+let combo = 0, lastPickAt = -99;
+let stunned = 0, invuln = 0, shake = 0, winT = 0;
+let gameT = 0, animT = 0;
+let swatArmT = 0;
+let spawnCd = 0, nextButterflyAt = 10, nextPickupAt = 14, nextCrowAt = 20, nextTipAt = 30, nextChime = 0;
+let moving = false, walkT = 0, lastMoveT = 0;
+let swatCd = 0, swatAnimT = 0;
+let lowTimeWarned = false, idleWarned = false;
+// sprint / stamina
+let sprintBtnHeld = false, stamina = 1, exhausted = false, sprinting = false;
+const SPRINT_MULT = 1.7, STAM_DRAIN = 1 / 2.6, STAM_REGEN = 1 / 4.2, STAM_READY = 0.45;
+let cfg = levelCfg(1);
+
+function levelCfg(n) {
+  const rush = n % 4 === 0;
+  if (rush) return {
+    rush: true, need: 12, time: 28 + Math.round(stat.extraTime() * 0.5),
+    maxField: 14, lifespan: 5.5, bees: 0, wasps: 0,
+    bunny: false, cloud: false, crow: false, beeChase: 0, cloudSpeed: 0, nibble: 99, spawnCd: 0.32,
+  };
+  const need = 8 + 2 * n;
+  return {
+    rush: false, need,
+    time: Math.round(34 + need * 2.6 - Math.min(n, 8)) + stat.extraTime(),
+    maxField: Math.min(8 + n, 16),
+    lifespan: Math.max(13 - n * 0.6, 7),
+    bees: Math.min(1 + Math.floor(n / 2), 6),
+    wasps: n >= 5 ? Math.min(Math.floor((n - 3) / 2), 3) : 0,
+    bunny: n >= 2, cloud: n >= 3, crow: n >= 6,
+    beeChase: Math.min(3.3 + n * 0.15, 5.2),
+    cloudSpeed: Math.min(1.1 + n * 0.06, 1.9),
+    nibble: Math.max(1.0, 1.9 - n * 0.09),
+    spawnCd: 0.5,
+  };
+}
+
+function setupLevel(n) {
+  level = n; cfg = levelCfg(n);
+  clearFlowers(false); clearBees(); clearPickups(); hideButterfly(); bunnyHide(); cloudHide(); crowHide();
+  for (let i = 0; i < cfg.bees; i++) spawnBee(false);
+  for (let i = 0; i < cfg.wasps; i++) spawnBee(true);
+  if (cfg.bunny) { bunnyEnter(); malekSay('bunny', "That bunny 🐰 munches your flowers — walk at it or SWAT to shoo it!"); }
+  if (cfg.cloud) { malekSay('cloud', "I made that cloud on a sad day 🌧️ don't stand under it, it slows you!"); }
+  if (cfg.cloud) cloudEnter();
+  if (cfg.wasps) malekSay('wasp', "Orange wasps are meaner than bees. Run, habibti! 🏃‍♀️");
+  progress = 0; need = cfg.need;
+  timeMax = timeLeft = cfg.time;
+  combo = 0; lastPickAt = -99; stunned = 0; invuln = 0; shake = 0; boostT = 0;
+  swatCd = 0; swatAnimT = 0; lowTimeWarned = false; idleWarned = false; lastMoveT = gameT;
+  sprintBtnHeld = false; stamina = 1; exhausted = false; sprinting = false;
+  kissCd = 0; kissAnimT = 0; if (ultActive) endMalekUlt();   // charge persists across levels
+  shieldCharges = upg.shield;
+  girlRefs.bubble.visible = shieldCharges > 0;
+  spawnCd = 0;
+  girl.position.set(0, 0, 0); girl.rotation.set(0, 0, 0); girl.visible = true;
+  tapTarget = null; tapMarker.visible = false;
+  for (let i = 0; i < 7; i++) spawnFlower(cfg.rush ? 'golden' : 'normal');
+  nextButterflyAt = gameT + rand(7, 12);
+  nextPickupAt = gameT + rand(9, 15);
+  nextCrowAt = gameT + rand(10, 16);
+  nextTipAt = gameT + rand(20, 30);
+  if (cfg.rush) malekSay('rush' + n, "GOLDEN RUSH ✨ I filled the field with gold, just for you. GO GO GO!");
+  paintSky(cfg.rush ? SKIES.rush : [SKIES.noon, SKIES.morning, SKIES.sunset][(n - 1) % 3]);
+  hudDirty = true;
+}
+
+function startCountdown(then) {
+  state = 'count';
+  $('lvlBanner').textContent = cfg.rush ? '✨ GOLDEN RUSH! ✨' : `Level ${level}`;
+  const seq = ['3', '2', '1', 'GO!'];
+  let i = 0;
+  const step = () => {
+    if (state !== 'count') return;
+    if (i < seq.length) {
+      $('countNum').innerHTML = `<span>${seq[i]}</span>`;
+      sfx.count(seq[i] === 'GO!');
+      i++; setTimeout(step, 750);
+    } else { $('countNum').innerHTML = ''; $('lvlBanner').textContent = ''; then(); }
+  };
+  step();
+}
+
+const CTRL_HINTS = { stick: 'Drag anywhere to walk! 👉', fixed: 'Use the stick to walk! 🎮', tap: 'Tap where Ranooma should go! 👆' };
+function startGame(fromLevel, fresh = fromLevel === 1) {
+  if (fresh) {
+    score = 0; totalPicked = 0; petals = 0; hearts = MAX_HEARTS;
+    upg = { shoes: 0, basket: 0, wand: 0, charm: 0, time: 0, lucky: 0, shield: 0 };
+    malekCharge = 0; malekWasReady = false;
+    malekReset();
+    malekSay('hi', "Hey Ranooma 💕 welcome to the meadow I coded for you!");
+    malekSay('hi2', CTRL_HINTS[ctrlMode] + " Tap 💫 to swat!");
+  }
+  setupLevel(fromLevel);
+  hideAllScreens();
+  $('hud').classList.remove('hidden');
+  $('hud2').classList.remove('hidden');
+  $('mini').classList.remove('hidden');
+  $('swatBtn').classList.remove('hidden');
+  $('sprintBtn').classList.remove('hidden'); $('stamWrap').classList.remove('hidden');
+  $('kissBtn').classList.remove('hidden');
+  if (fresh) { $('hint').textContent = CTRL_HINTS[ctrlMode]; $('hint').classList.remove('hidden'); $('hint').style.opacity = 1;
+    malekSay('sprint', "Hold 💨 (or press Shift on PC) to sprint — but you'll get tired, so pace yourself! 🏃‍♀️"); }
+  startCountdown(() => { state = 'playing'; if (ctrlMode === 'fixed') showFixedJoy(); });
+}
+
+let _winShopData = null;
+function levelWon() {
+  // while Malek is carrying Ranooma, hold the win until after the kiss
+  if (ultActive) { _ultTriggeredWin = true; return; }
+  _doLevelWon(false);
+}
+function _doLevelWon(fromUlt) {
+  state = 'won'; winT = 0;
+  const bonus = Math.round(timeLeft) * 5;
+  const petalBonus = 2 + level;
+  score += bonus; petals += petalBonus;
+  hearts = Math.min(MAX_HEARTS, hearts + 1);
+  best = Math.max(best, score); store.set('best', best);
+  bestLvl = Math.max(bestLvl, level); store.set('bestlvl', bestLvl);
+  savedLevel = Math.max(savedLevel, level + 1); store.set('curlevel', savedLevel);
+  sfx.win();
+  if (!fromUlt) endMalekUlt(); // let ult finish its leave animation on its own
+  clearFlowers(true); clearPickups(); crowHide();
+  const pos = girl.position.clone().setY(1.5);
+  burst(pos, FLOWER_COLORS, 26, 3.4, 2.6, 1.1, 1.2);
+  hideJoy();
+  _winShopData = {
+    title: cfg.rush ? `Golden Rush done! ✨` : `Level ${level} clear! 🎉`,
+    sub: `⏱️ +${bonus} time bonus · 🌸 +${petalBonus} petals · 💗 +1 heart`,
+    nextLevel: level + 1,
+  };
+  const delay = fromUlt ? 1800 : 900; // extra breathing room after the kiss scene
+  setTimeout(() => {
+    if (state !== 'won') return;
+    $('malekWinTitle').textContent = _winShopData.title;
+    $('malekWinSub').innerHTML = _winShopData.sub;
+    $('malekWinMsg').textContent = fromUlt
+      ? choice(["Every flower, just for you 💕😘", "You felt that? I coded it 😎💘", "Level clear AND a kiss — best day ever 💋✨"])
+      : choice(MALEK_PRAISE);
+    $('malekWin').classList.remove('hidden');
+  }, delay);
+}
+function previewLine(n) {
+  const c = levelCfg(n);
+  if (c.rush) return `Next: ✨ GOLDEN RUSH ✨ — all golden, no enemies, be quick!`;
+  let s = `Next: 🌼×${c.need} · 🐝×${c.bees}`;
+  if (c.wasps) s += ` · 🟠×${c.wasps}`;
+  if (c.bunny) s += ' · 🐰';
+  if (c.cloud) s += ' · 🌧️';
+  if (c.crow) s += ' · 🐦‍⬛';
+  return s;
+}
+
+function gameOver(reason) {
+  state = 'over';
+  best = Math.max(best, score); store.set('best', best);
+  bestLvl = Math.max(bestLvl, level); store.set('bestlvl', bestLvl);
+  sfx.lose();
+  hideJoy(); endMalekUlt();
+  setTimeout(() => {
+    if (state !== 'over') return;
+    $('overDeco').innerHTML = reason === 'stung'
+      ? '<span>🐝</span><span>😵</span><span>🐝</span>' : '<span>🥀</span><span>😢</span><span>🥀</span>';
+    $('overTitle').textContent = reason === 'stung' ? 'Too many stings!' : "Time's up!";
+    $('overScore').textContent = `⭐ ${score}`;
+    $('overStats').innerHTML =
+      `🌼 ${totalPicked} flowers · reached level ${level}<br>🏆 Best: ${best} (level ${bestLvl})<br><small>petals &amp; upgrades reset 🌸</small>`;
+    $('overScreen').classList.remove('hidden');
+  }, 1000);
+}
+
+function toMenu() {
+  state = 'menu';
+  endMalekUlt();
+  clearFlowers(false); clearBees(); clearPickups(); hideButterfly(); bunnyHide(); cloudHide(); crowHide();
+  girl.position.set(0, 0, 0); girl.rotation.set(0, 0, 0); girl.visible = true;
+  girlRefs.bubble.visible = false;
+  tapTarget = null; tapMarker.visible = false;
+  paintSky(SKIES.noon);
+  hideAllScreens();
+  $('hud').classList.add('hidden'); $('hud2').classList.add('hidden');
+  $('mini').classList.add('hidden'); $('swatBtn').classList.add('hidden');
+  $('sprintBtn').classList.add('hidden'); $('stamWrap').classList.add('hidden'); sprintBtnHeld = false;
+  $('kissBtn').classList.add('hidden');
+  $('malek').classList.remove('show');
+  refreshBestLine();
+  refreshPlayBtn();
+  $('titleScreen').classList.remove('hidden');
+}
+function hideAllScreens() {
+  ['titleScreen', 'levelScreen', 'overScreen', 'pauseScreen'].forEach(id => $(id).classList.add('hidden'));
+  $('saveModal').classList.add('hidden');
+  $('malekWin').classList.add('hidden');
+  $('hint').classList.add('hidden');
+  $('housePrompt').classList.add('hidden');
+  housePromptVisible = false;
+  hideJoy();
+}
+function refreshBestLine() {
+  if (best > 0) {
+    $('bestLine').textContent = `🏆 Best: ${best} · reached level ${bestLvl}`;
+    $('bestLine').classList.remove('hidden');
+  }
+}
+function refreshPlayBtn() {
+  if (savedLevel > 1) {
+    $('playBtn').textContent = `▶ Continue (Lv ${savedLevel})`;
+    $('newGameBtn').classList.remove('hidden');
+  } else {
+    $('playBtn').textContent = '▶ Play';
+    $('newGameBtn').classList.add('hidden');
+  }
+}
+
+/* ============================== shop ============================== */
+function renderShop() {
+  $('petalBal').textContent = `🌸 ${petals} petals`;
+  const grid = $('shopGrid');
+  grid.innerHTML = '';
+  for (const [key, u] of Object.entries(UPGRADES)) {
+    const tier = upg[key];
+    const maxed = tier >= u.costs.length;
+    const cost = maxed ? null : u.costs[tier];
+    const card = document.createElement('button');
+    card.className = 'shopCard' + (maxed ? ' maxed' : (petals < cost ? ' cant' : ''));
+    card.innerHTML = `<div class="em">${u.emoji}</div><div class="nm">${u.name}</div>` +
+      `<div class="ds">${u.desc}</div>` +
+      `<div class="pips">${'●'.repeat(tier)}${'○'.repeat(u.costs.length - tier)}</div>` +
+      `<div class="cost">${maxed ? 'MAX ✓' : '🌸 ' + cost}</div>`;
+    card.addEventListener('click', () => {
+      if (maxed || petals < cost) { tone(220, 0.1, 'square', 0.06); return; }
+      petals -= cost; upg[key]++;
+      sfx.buy();
+      hudDirty = true;
+      renderShop();
+    });
+    grid.appendChild(card);
+  }
+}
+
+/* ============================== picking / hits / swat ============================== */
+const basketWorld = new THREE.Vector3();
+function pickFlower(f) {
+  f.picked = true; f.pickT = 0;
+  f.fromPos = f.g.position.clone();
+  f.curScale = f.g.scale.x;
+  if (gameT - lastPickAt < 4) combo = Math.min(combo + 1, 6); else combo = 1;
+  lastPickAt = gameT;
+  const basePts = f.rainbow ? 50 : f.golden ? (cfg.rush ? 15 : 30) : 10;
+  const pts = basePts * combo;
+  score += pts;
+  progress += f.rainbow ? 3 : f.golden ? (cfg.rush ? 1 : 2) : 1;
+  petals += f.rainbow ? 6 : f.golden ? (cfg.rush ? 2 : 3) : 1;
+  totalPicked++;
+  timeLeft = Math.min(timeLeft + (f.rainbow ? 3 : f.golden ? 2.5 : 1.2), timeMax);
+  const headPos = f.g.position.clone().setY(0.8);
+  burst(headPos,
+    f.rainbow ? RAINBOW : f.golden ? [0xffd24a, 0xfff3b0, 0xffffff] : [f.baseColor.getHex(), 0xffffff, 0xffe066],
+    f.rainbow ? 18 : 12, 2.4, 1.8, 0.7);
+  f.rainbow ? sfx.rainbow() : f.golden ? sfx.gold() : sfx.pick(combo);
+  floatText(headPos, `+${pts}`, f.rainbow ? 'rainbow' : f.golden ? 'gold' : '');
+  if (combo >= 2) {
+    const c = $('combo');
+    c.textContent = combo >= 4 ? `Combo x${combo}! ✨🌟` : `Combo x${combo}! ✨`;
+    c.classList.remove('pop'); void c.offsetWidth; c.classList.add('pop');
+  }
+  if (combo >= 5) malekSay('combo5', "x5 combo?! That's MY girlfriend, everyone 😎💘");
+  if (f.rainbow) malekSay(null, "A RAINBOW one!! Lucky girl 🌈😍");
+  if ((f.golden || f.rainbow) && navigator.vibrate) navigator.vibrate(25);
+  // charge the Malek ultimate — slowly (hard to call!)
+  if (!ultActive) {
+    malekCharge = Math.min(1, malekCharge + (f.rainbow ? 0.16 : f.golden ? 0.09 : 0.04));
+    if (malekCharge >= 1 && !malekWasReady) {
+      malekWasReady = true;
+      malekSay('ultready', "I'm charged up 😎💪 blow me a kiss (💋) to call me in!");
+      tone(784, 0.1, 'triangle', 0.14); tone(1175, 0.22, 'triangle', 0.13, 0.08);
+    }
+  }
+  hudDirty = true;
+  if (progress >= need) levelWon();
+}
+
+function collectPickup(p) {
+  const pos = p.g.position.clone().setY(0.9);
+  if (p.type === 'clover') {
+    boostT = 5.5;
+    sfx.clover();
+    burst(pos, [0x4fae5c, 0xa0e8a0, 0xffffff], 12, 2.4, 1.8, 0.8);
+    floatText(pos, 'Zoom! 🍀', 'time');
+  } else if (p.type === 'heart') {
+    hearts = Math.min(MAX_HEARTS, hearts + 1);
+    sfx.heart();
+    burst(pos, [0xff6fa5, 0xffc9e8, 0xffffff], 12, 2.4, 1.8, 0.8);
+    floatText(pos, '+💗', '');
+  } else { // gift
+    sfx.gift();
+    burst(pos, [0xff8fb7, 0xc9a0ff, 0xfff3b0], 16, 2.6, 2, 0.9);
+    const roll = Math.random();
+    if (roll < 0.3) { petals += 10; floatText(pos, '+10 🌸', 'gold'); }
+    else if (roll < 0.55) { score += 50; floatText(pos, '+50 ⭐', 'gold'); }
+    else if (roll < 0.8) { timeLeft = Math.min(timeLeft + 8, timeMax); floatText(pos, '+8s ⏱️', 'time'); }
+    else { shieldCharges++; girlRefs.bubble.visible = true; floatText(pos, '🛡️ Shield!', 'time'); }
+    malekSay('gift', "Found one of my gift boxes! 🎁 I hid a few around~");
+  }
+  hudDirty = true;
+  removePickup(p);
+}
+
+function doSwat() {
+  if (state !== 'playing' || swatCd > 0 || stunned > 0) return;
+  swatCd = stat.swatCd(); swatAnimT = 0.32; swatArmT = 0.42;
+  sfx.swat();
+  const R = stat.swatR();
+  let hit = 0;
+  for (const b of bees) {
+    const d = Math.hypot(b.g.position.x - girl.position.x, b.g.position.z - girl.position.z);
+    if (d < R + 0.4 && b.state !== 'flee') {
+      b.state = 'flee'; b.fleeT = 1.8; b.cooldown = rand(5, 6.5);
+      burst(b.g.position.clone(), [0xffd24a, 0xffffff], 8, 3, 2, 0.6);
+      score += 5; hit++;
+      if (upg.wand >= 2) { petals += 1; }
+      floatText(b.g.position.clone().setY(1.6), upg.wand >= 2 ? '+5 ⭐ +1🌸' : '+5 ⭐', 'gold');
+    }
+  }
+  if (bunny.active && Math.hypot(bunny.g.position.x - girl.position.x, bunny.g.position.z - girl.position.z) < R + 0.8) {
+    bunnyScare(); hit++;
+  }
+  if (crow.active && crow.g.position.y < 2.5 &&
+      Math.hypot(crow.g.position.x - girl.position.x, crow.g.position.z - girl.position.z) < R + 1) {
+    if (crowDrop()) hit++;
+    else if (crow.state === 'fly') { crow.state = 'fleeUp'; hit++; }
+  }
+  if (hit) { sfx.swatHit(); if (navigator.vibrate) navigator.vibrate(30); hudDirty = true; }
+}
+
+function hitGirl(bee) {
+  if (invuln > 0 || state !== 'playing') return;
+  if (shieldCharges > 0) {
+    shieldCharges--;
+    girlRefs.bubble.visible = shieldCharges > 0;
+    invuln = 1.6;
+    sfx.shield();
+    burst(girl.position.clone().setY(1.2), [0xff9ec6, 0xffffff], 14, 2.8, 1.8, 0.8);
+    floatText(girl.position.clone().setY(2.2), 'Shield! 🛡️', 'time');
+    bee.state = 'flee'; bee.fleeT = 1.2; bee.cooldown = rand(4, 5.5);
+    return;
+  }
+  stunned = 1.2; invuln = 2.8; shake = 0.4; combo = 0;
+  hearts--;
+  if (progress > 0) {
+    progress--;
+    floatText(girl.position.clone().setY(2.2), '-1 🌸', 'bad');
+    burst(girl.position.clone().setY(1.4), [0xff8fb7, 0xffffff], 8, 2.6, 1.6, 0.8);
+  } else {
+    floatText(girl.position.clone().setY(2.2), 'Ouch!', 'bad');
+  }
+  score = Math.max(0, score - 5);
+  sfx.bee();
+  if (navigator.vibrate) navigator.vibrate(90);
+  bee.state = 'flee'; bee.fleeT = 1.2; bee.cooldown = rand(4, 5.5);
+  hudDirty = true;
+  malekSay('sting1', "Ranooma!! You okay?? 😖 Swat them before they get close!");
+  if (hearts === 1) malekSay('lastheart', "Last heart!! Careful habibti, my heart can't take it either 🙈💕");
+  if (hearts <= 0) gameOver('stung');
+}
+
+/* ============================== input (3 control modes) ============================== */
+let ctrlMode = store.get('ctrl', 'stick'); // 'stick' | 'fixed' | 'tap'
+const joyEl = $('joy'), knobEl = $('joyKnob');
+let joyId = null, joyOX = 0, joyOY = 0, joyVX = 0, joyVY = 0;
+let tapTarget = null, tapPointerId = null;
+const JOY_R = 56;
+const raycaster = new THREE.Raycaster();
+
+function showJoy(x, y) {
+  joyEl.style.left = x + 'px'; joyEl.style.top = y + 'px';
+  knobEl.style.transform = 'translate(-50%,-50%)';
+  joyEl.classList.remove('hidden');
+}
+function hideJoy() { joyEl.classList.add('hidden'); joyId = null; joyVX = joyVY = 0; }
+function fixedBase() { return { x: 96, y: innerHeight - 116 }; }
+function showFixedJoy() { const b = fixedBase(); showJoy(b.x, b.y); }
+
+function setTapTarget(e) {
+  raycaster.setFromCamera({ x: (e.clientX / innerWidth) * 2 - 1, y: -(e.clientY / innerHeight) * 2 + 1 }, camera);
+  const t = -raycaster.ray.origin.y / raycaster.ray.direction.y;
+  if (t <= 0) return;
+  let x = raycaster.ray.origin.x + raycaster.ray.direction.x * t;
+  let z = raycaster.ray.origin.z + raycaster.ray.direction.z * t;
+  const r = Math.hypot(x, z);
+  if (r > FIELD_R) { x *= FIELD_R / r; z *= FIELD_R / r; }
+  const ob = inObstacle(x, z);
+  if (ob) { const pos = { x, z }; pushOut(pos, ob); x = pos.x; z = pos.z; }
+  tapTarget = { x, z };
+  tapMarker.position.set(x, 0.06, z);
+  tapMarker.visible = true;
+}
+
+renderer.domElement.addEventListener('pointerdown', e => {
+  // Interior mode: drag to orbit, tap to interact
+  if (insideHouse) {
+    initAudio();
+    if (intDragId === null) { intDragId = e.pointerId; intDragPrevX = e.clientX; }
+    return;
+  }
+  if (state !== 'playing') return;
+  $('hint').style.opacity = 0;
+  if (ctrlMode === 'tap') {
+    if (tapPointerId === null) { tapPointerId = e.pointerId; setTapTarget(e); }
+    return;
+  }
+  if (joyId !== null) return;
+  if (ctrlMode === 'fixed') {
+    const b = fixedBase();
+    if (Math.hypot(e.clientX - b.x, e.clientY - b.y) > 150) return;
+    joyId = e.pointerId; joyOX = b.x; joyOY = b.y;
+    moveKnob(e);
+  } else {
+    joyId = e.pointerId; joyOX = e.clientX; joyOY = e.clientY;
+    joyVX = joyVY = 0;
+    showJoy(joyOX, joyOY);
+  }
+});
+function moveKnob(e) {
+  let dx = e.clientX - joyOX, dy = e.clientY - joyOY;
+  const d = Math.hypot(dx, dy);
+  if (d > JOY_R) { dx = dx / d * JOY_R; dy = dy / d * JOY_R; }
+  knobEl.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+  joyVX = dx / JOY_R; joyVY = dy / JOY_R;
+}
+addEventListener('pointermove', e => {
+  if (insideHouse) {
+    if (e.pointerId === intDragId) { intYaw -= (e.clientX - intDragPrevX) * 0.008; intDragPrevX = e.clientX; }
+    return;
+  }
+  if (e.pointerId === joyId) moveKnob(e);
+  else if (ctrlMode === 'tap' && e.pointerId === tapPointerId && state === 'playing') setTapTarget(e);
+});
+const endPointer = e => {
+  if (insideHouse) {
+    if (e.pointerId === intDragId) {
+      // if barely moved, treat as a tap for interior item
+      intDragId = null;
+      tapInterior(e.clientX, e.clientY);
+    }
+    return;
+  }
+  if (e.pointerId === joyId) {
+    if (ctrlMode === 'fixed') { joyId = null; joyVX = joyVY = 0; knobEl.style.transform = 'translate(-50%,-50%)'; }
+    else hideJoy();
+  }
+  if (e.pointerId === tapPointerId) tapPointerId = null;
+};
+addEventListener('pointerup', endPointer);
+addEventListener('pointercancel', endPointer);
+
+const keys = new Set();
+addEventListener('keydown', e => {
+  keys.add(e.code);
+  if (e.code === 'Space' || e.code === 'KeyE') { e.preventDefault(); doSwat(); }
+  if (e.code === 'KeyK') { e.preventDefault(); blowKiss(); }
+});
+addEventListener('keyup', e => keys.delete(e.code));
+addEventListener('contextmenu', e => e.preventDefault());
+
+function inputVec() {
+  let x = 0, y = 0;
+  if (keys.has('ArrowLeft') || keys.has('KeyA')) x -= 1;
+  if (keys.has('ArrowRight') || keys.has('KeyD')) x += 1;
+  if (keys.has('ArrowUp') || keys.has('KeyW')) y -= 1;
+  if (keys.has('ArrowDown') || keys.has('KeyS')) y += 1;
+  if (x || y) { const d = Math.hypot(x, y); return [x / d, y / d]; }
+  if (ctrlMode === 'tap') {
+    if (!tapTarget) return [0, 0];
+    const dx = tapTarget.x - girl.position.x, dz = tapTarget.z - girl.position.z;
+    const d = Math.hypot(dx, dz);
+    if (d < 0.3) { tapTarget = null; tapMarker.visible = false; return [0, 0]; }
+    const mag = clamp(d / 2, 0.35, 1);
+    return [dx / d * mag, dz / d * mag];
+  }
+  return [joyVX, joyVY];
+}
+/* ============================== save / restore ============================== */
+const SAVE_KEYS = PROFILE_DATA_KEYS;
+
+function exportSave() {
+  const data = {};
+  SAVE_KEYS.forEach(k => {
+    const v = store.get(k, null);
+    if (v !== null) data[k] = v;
+  });
+  return btoa(JSON.stringify(data));
+}
+
+function importSave(code) {
+  try {
+    const data = JSON.parse(atob(code.trim()));
+    SAVE_KEYS.forEach(k => { if (data[k] !== undefined) store.set(k, data[k]); });
+    return true;
+  } catch(e) { return false; }
+}
+
+$('saveBtn').addEventListener('click', () => {
+  $('saveCodeOut').value = exportSave();
+  $('saveCodeIn').value = '';
+  $('copySaveBtn').textContent = '📋 Copy';
+  $('saveModal').classList.remove('hidden');
+});
+$('closeSaveBtn').addEventListener('click', () => $('saveModal').classList.add('hidden'));
+$('copySaveBtn').addEventListener('click', () => {
+  const ta = $('saveCodeOut');
+  ta.select(); ta.setSelectionRange(0, 99999);
+  navigator.clipboard ? navigator.clipboard.writeText(ta.value).catch(() => document.execCommand('copy'))
+                      : document.execCommand('copy');
+  $('copySaveBtn').textContent = '✅ Copied!';
+  setTimeout(() => $('copySaveBtn').textContent = '📋 Copy', 2200);
+});
+$('loadSaveBtn').addEventListener('click', () => {
+  const code = $('saveCodeIn').value.trim();
+  if (!code) { $('saveCodeIn').style.borderColor = '#ff6b9d'; setTimeout(() => $('saveCodeIn').style.borderColor = '', 1200); return; }
+  if (importSave(code)) {
+    $('saveModal').classList.add('hidden');
+    location.reload();
+  } else {
+    $('saveCodeIn').style.borderColor = '#ff4444';
+    setTimeout(() => $('saveCodeIn').style.borderColor = '', 1500);
+  }
+});
+
+/* ============================== profile UI ============================== */
+function showProfileScreen(isFirstRun) {
+  $('profileInput').value = isFirstRun ? '' : profileId;
+  $('profileTitle').textContent = isFirstRun ? "Who's playing? 🌸" : 'Switch profile';
+  $('profileCancelBtn').classList.toggle('hidden', isFirstRun);
+  $('profileModal').classList.remove('hidden');
+  $('profileInput').focus();
+}
+$('profileGoBtn').addEventListener('click', () => {
+  const id = $('profileInput').value.trim();
+  if (!id) {
+    $('profileInput').style.borderColor = '#ff4444';
+    setTimeout(() => $('profileInput').style.borderColor = '', 1200);
+    return;
+  }
+  setProfile(id);
+});
+$('profileInput').addEventListener('keydown', e => { if (e.key === 'Enter') $('profileGoBtn').click(); });
+$('profileCancelBtn').addEventListener('click', () => $('profileModal').classList.add('hidden'));
+$('switchProfileBtn').addEventListener('click', () => { sfx.click(); showProfileScreen(false); });
+if (!localStorage.getItem(PROFILE_KEY)) showProfileScreen(true);
+
+/* ============================== UI wiring ============================== */
+$('malekWinOk').addEventListener('click', () => {
+  sfx.click();
+  $('malekWin').classList.add('hidden');
+  if (!_winShopData) return;
+  $('lvlTitle').textContent = _winShopData.title;
+  $('lvlSub').innerHTML = _winShopData.sub;
+  renderShop();
+  $('nextBtn').textContent = `Level ${_winShopData.nextLevel} ➜`;
+  $('nextPreview').innerHTML = previewLine(_winShopData.nextLevel);
+  $('levelScreen').classList.remove('hidden');
+  _winShopData = null;
+});
+$('playBtn').addEventListener('click', () => { initAudio(); sfx.click(); startGame(savedLevel, true); });
+$('newGameBtn').addEventListener('click', () => {
+  sfx.click();
+  savedLevel = 1; store.set('curlevel', 1);
+  refreshPlayBtn();
+});
+$('nextBtn').addEventListener('click', () => { initAudio(); sfx.click(); startGame(level + 1); });
+$('againBtn').addEventListener('click', () => { initAudio(); sfx.click(); startGame(1); });
+$('menuBtn').addEventListener('click', () => { sfx.click(); toMenu(); });
+$('quitBtn').addEventListener('click', () => { sfx.click(); toMenu(); });
+$('pauseBtn').addEventListener('click', () => {
+  if (state === 'playing') { state = 'paused'; hideJoy(); $('pauseScreen').classList.remove('hidden'); sfx.click(); }
+});
+$('resumeBtn').addEventListener('click', () => {
+  if (state === 'paused') {
+    $('pauseScreen').classList.add('hidden'); sfx.click(); state = 'playing';
+    if (ctrlMode === 'fixed') showFixedJoy();
+  }
+});
+$('swatBtn').addEventListener('pointerdown', e => { e.preventDefault(); initAudio(); doSwat(); });
+// sprint: hold the button to run
+const sprintBtn = $('sprintBtn');
+const sprintDown = e => { e.preventDefault(); initAudio(); sprintBtnHeld = true; };
+const sprintUp = () => { sprintBtnHeld = false; };
+sprintBtn.addEventListener('pointerdown', sprintDown);
+sprintBtn.addEventListener('pointerup', sprintUp);
+sprintBtn.addEventListener('pointercancel', sprintUp);
+sprintBtn.addEventListener('pointerleave', sprintUp);
+// kiss: blow a kiss (summons the Malek ultimate when charged)
+$('kissBtn').addEventListener('pointerdown', e => { e.preventDefault(); initAudio(); blowKiss(); });
+function syncSndBtn() { $('sndBtn').textContent = soundOn ? '🔊' : '🔇'; }
+$('sndBtn').addEventListener('click', () => {
+  soundOn = !soundOn; store.set('snd', soundOn ? '1' : '0');
+  syncSndBtn(); syncToggles();
+  if (soundOn) { initAudio(); sfx.click(); }
+});
+// iOS Safari (and other mobile browsers) can suspend rAF/audio while backgrounded and drop
+// pointerup/pointercancel events, leaving the joystick/sprint/keys latched and the clock
+// holding a huge elapsed time. Reset everything cleanly on the way out and back in.
+function resetStuckInput() {
+  hideJoy();
+  knobEl.style.transform = 'translate(-50%,-50%)';
+  tapPointerId = null;
+  intDragId = null;
+  sprintBtnHeld = false;
+  keys.clear();
+}
+function onAppHidden() {
+  resetStuckInput();
+  if (state === 'playing') { state = 'paused'; $('pauseScreen').classList.remove('hidden'); }
+}
+function onAppVisible() {
+  clock.getDelta(); // discard time spent backgrounded so the next frame's dt stays tiny
+  resetStuckInput();
+  if (AC && AC.state === 'suspended') AC.resume().catch(() => {});
+}
+document.addEventListener('visibilitychange', () => { document.hidden ? onAppHidden() : onAppVisible(); });
+addEventListener('pagehide', onAppHidden);
+addEventListener('pageshow', onAppVisible);
+addEventListener('blur', onAppHidden);
+addEventListener('focus', onAppVisible);
+
+// dress-up swatches
+function buildSwatches(elId, colors, key, mat) {
+  const wrap = $(elId);
+  colors.forEach((c, i) => {
+    const d = document.createElement('div');
+    d.className = 'sw' + (+store.get(key, 0) === i ? ' sel' : '');
+    d.style.background = '#' + c.toString(16).padStart(6, '0');
+    d.addEventListener('click', () => {
+      store.set(key, i);
+      mat.color.setHex(c);
+      wrap.querySelectorAll('.sw').forEach(s => s.classList.remove('sel'));
+      d.classList.add('sel');
+      initAudio(); sfx.click();
+    });
+    wrap.appendChild(d);
+  });
+}
+buildSwatches('dressSw', DRESS_COLORS, 'dress', girlRefs.dressMat);
+buildSwatches('hairSw', HAIR_COLORS, 'hair', girlRefs.hairMat);
+
+// control mode picker
+function syncCtrl() {
+  $('ctrlStick').classList.toggle('sel', ctrlMode === 'stick');
+  $('ctrlFixed').classList.toggle('sel', ctrlMode === 'fixed');
+  $('ctrlTap').classList.toggle('sel', ctrlMode === 'tap');
+}
+function setCtrl(mode) {
+  ctrlMode = mode; store.set('ctrl', mode);
+  hideJoy(); tapTarget = null; tapMarker.visible = false;
+  syncCtrl(); initAudio(); sfx.click();
+}
+$('ctrlStick').addEventListener('click', () => setCtrl('stick'));
+$('ctrlFixed').addEventListener('click', () => setCtrl('fixed'));
+$('ctrlTap').addEventListener('click', () => setCtrl('tap'));
+
+// toggles
+function syncToggles() {
+  $('togSnd').classList.toggle('off', !soundOn);
+  $('togChime').classList.toggle('off', !chimesOn);
+  $('togHD').classList.toggle('off', !hdOn);
+}
+$('togSnd').addEventListener('click', () => {
+  soundOn = !soundOn; store.set('snd', soundOn ? '1' : '0');
+  syncSndBtn(); syncToggles(); if (soundOn) { initAudio(); sfx.click(); }
+});
+$('togChime').addEventListener('click', () => {
+  chimesOn = !chimesOn; store.set('chime', chimesOn ? '1' : '0');
+  syncToggles(); initAudio(); sfx.click();
+});
+$('togHD').addEventListener('click', () => {
+  hdOn = !hdOn; store.set('hd', hdOn ? '1' : '0');
+  applyQuality(); syncToggles(); initAudio(); sfx.click();
+});
+syncSndBtn(); syncToggles(); syncCtrl(); refreshBestLine(); refreshPlayBtn();
+
+/* ============================== HUD + minimap ============================== */
+let hudDirty = true, lastBarW = -1;
+function refreshHud() {
+  if (hudDirty) {
+    $('cnt').textContent = `${progress}/${need}`;
+    $('score').textContent = score;
+    $('lvl').textContent = level;
+    $('petals').textContent = petals;
+    $('hearts').textContent = '💗'.repeat(Math.max(0, hearts)) + '🤍'.repeat(Math.max(0, MAX_HEARTS - hearts));
+    hudDirty = false;
+  }
+  const frac = clamp(timeLeft / timeMax, 0, 1);
+  const w = Math.round(frac * 200) / 2;
+  if (w !== lastBarW) {
+    lastBarW = w;
+    const bar = $('timerBar');
+    bar.style.width = w + '%';
+    bar.style.background = `hsl(${Math.round(frac * 110)}, 75%, 55%)`;
+  }
+  $('swatBtn').classList.toggle('cool', swatCd > 0);
+  // stamina bar
+  const sb = $('stamBar');
+  sb.style.width = (stamina * 100) + '%';
+  sb.style.background = exhausted ? '#e2724f' : (stamina < 0.3 ? '#f0b54f' : '#4fc28a');
+  const spb = $('sprintBtn');
+  spb.classList.toggle('tired', exhausted);
+  spb.classList.toggle('go', sprinting);
+  spb.textContent = exhausted ? '😮‍💨' : '💨';
+  // Malek ultimate charge
+  const ready = malekCharge >= 1;
+  $('malekPct').textContent = ready ? 'READY!' : Math.round(malekCharge * 100) + '%';
+  $('malekChip').classList.toggle('full', ready);
+  $('kissBtn').classList.toggle('ready', ready && !ultActive);
+  if (state === 'playing' && ctrlMode === 'fixed' && joyEl.classList.contains('hidden')) showFixedJoy();
+}
+
+const miniCtx = $('mini').getContext('2d');
+let miniFrame = 0;
+function drawMinimap() {
+  if ((miniFrame = (miniFrame + 1) % 4) !== 0) return;
+  const C = miniCtx, S = 184, half = S / 2, k = half / (FIELD_R + 2.5);
+  C.clearRect(0, 0, S, S);
+  C.save();
+  C.beginPath(); C.arc(half, half, half - 2, 0, Math.PI * 2); C.clip();
+  C.fillStyle = 'rgba(255,255,255,.55)'; C.fillRect(0, 0, S, S);
+  for (const o of OBSTACLES) {
+    C.fillStyle = o.pond ? 'rgba(143,212,232,.85)' : 'rgba(255,158,198,.9)';
+    C.beginPath();
+    C.ellipse(half + o.x * k, half + o.z * k, o.rx * k, o.rz * k, 0, 0, Math.PI * 2); C.fill();
+  }
+  const dot = (x, z, r, col) => { C.fillStyle = col; C.beginPath(); C.arc(half + x * k, half + z * k, r, 0, Math.PI * 2); C.fill(); };
+  for (const f of flowers) if (!f.picked)
+    dot(f.g.position.x, f.g.position.z, 2.6, f.rainbow ? '#9d5eff' : f.golden ? '#f5a800' : '#ffffff');
+  for (const p of pickups) dot(p.g.position.x, p.g.position.z, 2.6,
+    p.type === 'clover' ? '#4fae5c' : p.type === 'heart' ? '#ff6fa5' : '#f5d142');
+  for (const b of bees) dot(b.g.position.x, b.g.position.z, 2.4, b.wasp ? '#ff7430' : '#35302e');
+  if (bunny.active) dot(bunny.g.position.x, bunny.g.position.z, 2.8, '#bbb4ae');
+  if (crow.active) dot(crow.g.position.x, crow.g.position.z, 2.8, '#3a3f4a');
+  if (rainCloud.active) {
+    C.fillStyle = 'rgba(106,122,144,.5)';
+    C.beginPath(); C.arc(half + rainCloud.g.position.x * k, half + rainCloud.g.position.z * k, rainCloud.R * k, 0, Math.PI * 2); C.fill();
+  }
+  if (butterfly.active) dot(butterfly.g.position.x, butterfly.g.position.z, 2.6, '#ff9ed2');
+  dot(girl.position.x, girl.position.z, 3.4, '#ff5e9c');
+  C.restore();
+  C.strokeStyle = 'rgba(255,255,255,.9)'; C.lineWidth = 3;
+  C.beginPath(); C.arc(half, half, half - 2, 0, Math.PI * 2); C.stroke();
+}
+
+/* ============================== gameplay update ============================== */
+const tmpA = new THREE.Vector3(), tmpB = new THREE.Vector3();
+
+function gameplay(dt) {
+  gameT += dt;
+  if (!ultActive) timeLeft -= dt;            // Malek freezes the clock while he's here 😎
+  if (timeLeft <= 0) { timeLeft = 0; gameOver('time'); return; }
+  if (timeLeft < 10 && !lowTimeWarned && !ultActive) { lowTimeWarned = true; malekSay(null, "10 seconds left babe, hurry!! ⏰"); }
+  stunned = Math.max(0, stunned - dt);
+  invuln = Math.max(0, invuln - dt);
+  boostT = Math.max(0, boostT - dt);
+  swatCd = Math.max(0, swatCd - dt);
+  kissCd = Math.max(0, kissCd - dt);
+
+  /* --- movement --- */
+  const [ix, iy] = inputVec();
+  const ilen = Math.hypot(ix, iy);
+  moving = false;
+  // sprint stamina: drain while sprinting, recover otherwise; lock out when exhausted until refilled past STAM_READY
+  const wantSprint = (sprintBtnHeld || keys.has('ShiftLeft') || keys.has('ShiftRight'));
+  sprinting = wantSprint && ilen > 0.12 && stunned <= 0 && !exhausted && stamina > 0;
+  if (sprinting) {
+    stamina -= STAM_DRAIN * dt;
+    if (stamina <= 0) {
+      stamina = 0; exhausted = true; sprinting = false;
+      sfx.poof(); if (navigator.vibrate) navigator.vibrate(40);
+      floatText(girl.position.clone().setY(2.2), 'tired! 😮‍💨', 'bad');
+      malekSay('tired', "Catch your breath, habibti 😮‍💨 sprint recharges when you slow down!");
+    }
+  } else {
+    stamina = Math.min(1, stamina + STAM_REGEN * dt);
+    if (exhausted && stamina >= STAM_READY) exhausted = false;
+  }
+  if (ilen > 0.12 && stunned <= 0) {
+    moving = true;
+    lastMoveT = gameT;
+    const sp = stat.speed() * (sprinting ? SPRINT_MULT : 1);
+    girl.position.x += ix * sp * dt;
+    girl.position.z += iy * sp * dt;
+    if (sprinting && Math.random() < dt * 18)
+      burst(girl.position.clone().setY(0.2), [0xffffff, 0xd0f0ff], 1, 0.9, 0.7, 0.4, 0.7);
+    const pr = Math.hypot(girl.position.x, girl.position.z);
+    if (pr > FIELD_R) { girl.position.x *= FIELD_R / pr; girl.position.z *= FIELD_R / pr; }
+    const ob = inObstacle(girl.position.x, girl.position.z);
+    if (ob) {
+      pushOut(girl.position, ob);
+      if (ob.pond) malekSay('pond', "No swimming!! I didn't code water physics 😂");
+    }
+    const target = Math.atan2(ix, iy);
+    girl.rotation.y = lerpAngle(girl.rotation.y, target, 1 - Math.exp(-12 * dt));
+    walkT += dt * (4 + 6 * Math.min(ilen, 1));
+    if (boostT > 0 && Math.random() < dt * 14)
+      burst(girl.position.clone().setY(0.25), [0xa0e8a0, 0x4fae5c], 1, 0.8, 0.8, 0.45, 0.7);
+  } else if (gameT - lastMoveT > 8 && !idleWarned && state === 'playing') {
+    idleWarned = true;
+    malekSay(null, "Ranoomaaa, you there? The flowers miss you (me too) 🥺");
+  }
+
+  /* --- flower spawning --- */
+  spawnCd -= dt;
+  if (openFlowers().length < cfg.maxField && spawnCd <= 0) {
+    spawnFlower(rollFlowerKind());
+    spawnCd = cfg.spawnCd;
+  }
+
+  /* --- flowers: wilt, pick, fly-to-basket --- */
+  girlRefs.basket.getWorldPosition(basketWorld);
+  const pickR = stat.pickR();
+  for (let i = flowers.length - 1; i >= 0; i--) {
+    const f = flowers[i];
+    if (f.carried) continue; // crow has it
+    if (f.picked) {
+      f.pickT += dt;
+      const k = f.pickT / 0.28;
+      if (k >= 1) { removeFlower(f); continue; }
+      f.g.position.lerpVectors(f.fromPos, basketWorld, k * k);
+      f.g.scale.setScalar(Math.max(0.001, (1 - k) * f.curScale));
+      continue;
+    }
+    if (rainCloud.active &&
+        Math.hypot(f.g.position.x - rainCloud.g.position.x, f.g.position.z - rainCloud.g.position.z) < rainCloud.R)
+      f.ageBoost += dt * 1.6;
+    const t = (gameT - f.born + f.ageBoost) / f.lifespan;
+    if (t >= 1) {
+      burst(f.g.position.clone().setY(0.5), [0xa8b08a, 0x8a9b78], 6, 1.4, 1.2, 0.6, 0.8);
+      sfx.poof();
+      removeFlower(f);
+      continue;
+    }
+    f.wiltK = t > 0.62 ? (t - 0.62) / 0.38 : 0;
+    if (f.wiltK > 0) {
+      f.head.rotation.x = f.wiltK * 1.05;
+      if (!f.rainbow) f.petalMat.color.copy(f.baseColor).lerp(new THREE.Color(0x9b8d72), f.wiltK * 0.85);
+    }
+    if (stunned <= 0 &&
+        Math.hypot(f.g.position.x - girl.position.x, f.g.position.z - girl.position.z) < pickR) {
+      pickFlower(f);
+      if (state !== 'playing') return;
+    }
+  }
+
+  /* --- pickups --- */
+  if (gameT > nextPickupAt && pickups.length < 2 && level >= 2 && !cfg.rush) {
+    const roll = Math.random();
+    spawnPickup(hearts < MAX_HEARTS && roll < 0.4 ? 'heart' : (level >= 3 && roll < 0.7 ? 'gift' : 'clover'));
+    nextPickupAt = gameT + rand(12, 18);
+  }
+  for (let i = pickups.length - 1; i >= 0; i--) {
+    const p = pickups[i];
+    if (gameT - p.born > 12) {
+      burst(p.g.position.clone().setY(0.5), 0xffffff, 5, 1.4, 1.2, 0.5, 0.7);
+      removePickup(p); continue;
+    }
+    if (stunned <= 0 &&
+        Math.hypot(p.g.position.x - girl.position.x, p.g.position.z - girl.position.z) < pickR) {
+      collectPickup(p);
+    }
+  }
+
+  /* --- bees & wasps --- */
+  const aggroR = stat.aggro();
+  for (const b of bees) {
+    b.t += dt; b.cooldown -= dt;
+    if (ultActive) {
+      // Malek's ult keeps every bee scared off — no stings reach him or Ranooma
+      b.state = 'flee'; b.fleeT = 1.5;
+      tmpB.copy(b.g.position).sub(girl.position).setY(0).normalize().multiplyScalar(5).add(b.g.position);
+      tmpB.y = 2.2;
+      moveBee(b, tmpB, 4.5, dt);
+      continue;
+    }
+    const distGirl = b.g.position.distanceTo(tmpA.copy(girl.position).setY(b.g.position.y));
+    const chaseSpd = (cfg.beeChase + (b.wasp ? 1.15 : 0)) * stat.beeSpeedMul();
+    if (b.state === 'guard') {
+      b.retarget -= dt;
+      if (b.retarget <= 0) {
+        b.retarget = rand(4, 7);
+        const open = openFlowers();
+        if (open.length && Math.random() < 0.75) b.guardPos.copy(choice(open).g.position);
+        else { const a = rand(0, Math.PI * 2); b.guardPos.set(Math.cos(a) * rand(4, FIELD_R - 6), 0, Math.sin(a) * rand(4, FIELD_R - 6)); }
+      }
+      tmpB.set(
+        b.guardPos.x + Math.cos(b.t * 1.5) * 1.5,
+        1.0 + Math.sin(b.t * 3) * 0.18,
+        b.guardPos.z + Math.sin(b.t * 1.5) * 1.5);
+      moveBee(b, tmpB, 2.3, dt);
+      if (b.cooldown <= 0 && distGirl < aggroR * (b.wasp ? 1.25 : 1) && invuln <= 0) {
+        b.state = 'chase'; b.chaseT = stat.chaseDur() + (b.wasp ? 0.8 : 0); sfx.buzz();
+        malekSay('chase1', "Uh oh, angry bee incoming! Tap 💫 to swat it away!");
+      }
+    } else if (b.state === 'chase') {
+      b.chaseT -= dt;
+      tmpB.copy(girl.position); tmpB.y = 1.0;
+      moveBee(b, tmpB, chaseSpd, dt);
+      if (distGirl < 0.85) hitGirl(b);
+      else if (b.chaseT <= 0 || invuln > 0) { b.state = 'flee'; b.fleeT = 1.0; b.cooldown = rand(3, 4.5); }
+    } else {
+      b.fleeT -= dt;
+      tmpB.copy(b.g.position).sub(girl.position).setY(0).normalize().multiplyScalar(5).add(b.g.position);
+      tmpB.y = 2.2;
+      moveBee(b, tmpB, 3.5, dt);
+      if (b.fleeT <= 0) { b.state = 'guard'; b.retarget = 0; }
+    }
+    b.shadow.position.set(b.g.position.x, 0.026, b.g.position.z);
+  }
+
+  updateBunny(dt);
+  updateCloud(dt);
+
+  /* --- crow --- */
+  if (cfg.crow && !crow.active && gameT > nextCrowAt) {
+    crowEnter();
+    nextCrowAt = gameT + rand(16, 24);
+    if (crow.active) malekSay('crow', "HEY! That crow steals flowers! Swat it to make it drop them! 🐦‍⬛");
+  }
+  updateCrow(dt);
+
+  /* --- butterfly --- */
+  if (!butterfly.active && gameT > nextButterflyAt) spawnButterfly();
+  if (butterfly.active) {
+    butterfly.t += dt;
+    const k = butterfly.t / butterfly.dur;
+    if (k >= 1) { hideButterfly(); nextButterflyAt = gameT + rand(10, 16); }
+    else {
+      const px = THREE.MathUtils.lerp(butterfly.from.x, butterfly.to.x, k) + Math.sin(butterfly.t * 1.7) * 3;
+      const pz = THREE.MathUtils.lerp(butterfly.from.z, butterfly.to.z, k) + Math.cos(butterfly.t * 1.3) * 3;
+      const py = 1.15 + Math.sin(butterfly.t * 4) * 0.25;
+      tmpB.set(px, py, pz);
+      tmpA.copy(tmpB).sub(butterfly.g.position);
+      if (tmpA.lengthSq() > 0.0001) butterfly.g.rotation.y = Math.atan2(tmpA.x, tmpA.z);
+      butterfly.g.position.copy(tmpB);
+      if (Math.hypot(px - girl.position.x, pz - girl.position.z) < 1.3) {
+        timeLeft = Math.min(timeLeft + 7, timeMax);
+        score += 25; petals += 1; hudDirty = true;
+        sfx.fly();
+        burst(butterfly.g.position, [0xff9ed2, 0xffffff, 0xc9a0ff], 14, 2.2, 1.8, 0.8);
+        floatText(butterfly.g.position, '+7s 🦋', 'time');
+        hideButterfly(); nextButterflyAt = gameT + rand(11, 17);
+      }
+    }
+  }
+
+  /* --- house proximity --- */
+  const houseDist = Math.hypot(girl.position.x - OBSTACLES[2].x, girl.position.z - OBSTACLES[2].z);
+  if (houseDist < 4.8 && !housePromptVisible) {
+    housePromptVisible = true;
+    $('housePrompt').classList.remove('hidden');
+    malekSay('houseNear', "That's your little cottage! 🏠 Go inside and make it your own 💕");
+  } else if (houseDist >= 4.8 && housePromptVisible) {
+    housePromptVisible = false;
+    $('housePrompt').classList.add('hidden');
+  }
+
+  /* --- occasional dev tip --- */
+  if (gameT > nextTipAt) {
+    nextTipAt = gameT + rand(16, 26);
+    if (!malek.queue.length && malek.showT <= 0) malekSay(null, choice(MALEK_TIPS));
+  }
+}
+
+function moveBee(b, target, speed, dt) {
+  tmpA.copy(target).sub(b.g.position);
+  const d = tmpA.length();
+  if (d > 0.02) {
+    tmpA.normalize();
+    b.g.position.addScaledVector(tmpA, Math.min(speed * dt, d));
+    b.faceA = lerpAngle(b.faceA, Math.atan2(tmpA.x, tmpA.z), 1 - Math.exp(-8 * dt));
+    b.g.rotation.y = b.faceA;
+  }
+}
+
+/* ============================== cosmetic update ============================== */
+function cosmetics(dt) {
+  for (const c of clouds) {
+    c.position.x += c.userData.speed * dt;
+    if (c.position.x > 80) c.position.x = -80;
+  }
+  duck.position.x = OBSTACLES[0].x + Math.cos(animT * 0.35) * 2.4;
+  duck.position.z = OBSTACLES[0].z + Math.sin(animT * 0.35) * 1.7;
+  duck.position.y = 0.18 + Math.sin(animT * 2.2) * 0.04;
+  duck.rotation.y = -animT * 0.35 + Math.PI / 2;
+
+  // drifting blossom petals
+  for (const dp of driftPetals) {
+    dp.y -= dt * 0.55;
+    if (dp.y < 0.1) { dp.y = rand(5, 8); dp.x = rand(-14, 14); dp.z = rand(-14, 14); }
+    dp.m.position.set(
+      camFocus.x + dp.x + Math.sin(animT * 0.8 + dp.off) * 1.2,
+      dp.y,
+      camFocus.z + dp.z + Math.cos(animT * 0.6 + dp.off) * 1.2);
+    dp.m.rotation.y += dt * dp.spin;
+    dp.m.rotation.z = Math.sin(animT * 2 + dp.off) * 0.6;
+  }
+
+  for (const f of flowers) {
+    if (f.popK < 1) f.popK = Math.min(1, f.popK + dt / 0.35);
+    if (!f.picked && !f.carried) {
+      const s = easeOutBack(f.popK) * (1 - 0.22 * f.wiltK) * (f.golden ? 1.18 : f.rainbow ? 1.3 : 1);
+      f.g.scale.setScalar(Math.max(0.001, s));
+      f.head.rotation.z = Math.sin(animT * 2 + f.phase) * 0.07 * (1 - f.wiltK);
+      f.ring.material.opacity = 0.16 + 0.1 * Math.sin(animT * 3 + f.phase);
+      if (f.golden || f.rainbow) {
+        f.head.rotation.y += dt * 2.2;
+        if (Math.random() < dt * 2.5)
+          burst(f.g.position.clone().setY(0.75), f.rainbow ? choice(RAINBOW) : 0xffe27a, 1, 0.5, 0.9, 0.5, 0.7);
+      }
+    }
+  }
+  for (const p of pickups) {
+    if (p.popK < 1) { p.popK = Math.min(1, p.popK + dt / 0.35); p.g.scale.setScalar(Math.max(0.001, easeOutBack(p.popK))); }
+    p.g.position.y = Math.sin(animT * 2.5 + p.phase) * 0.08;
+    p.g.rotation.y += dt * 1.8;
+  }
+  for (const b of bees) {
+    const flap = Math.sin(animT * (b.wasp ? 55 : 42) + b.t) * 0.55 + 0.45;
+    b.wings[0].rotation.z = flap; b.wings[1].rotation.z = -flap;
+  }
+  if (butterfly.active) {
+    const flap = Math.sin(animT * 14) * 0.85;
+    butterfly.wings[0].rotation.z = flap; butterfly.wings[1].rotation.z = -flap;
+  }
+  if (rainCloud.active) rainCloud.g.position.y = 7 + Math.sin(animT * 1.4) * 0.25;
+
+  // tap marker pulse
+  if (tapMarker.visible) {
+    const k = 1 + Math.sin(animT * 6) * 0.15;
+    tapMarker.scale.setScalar(k);
+  }
+  // swat ring effect
+  if (swatAnimT > 0) {
+    swatAnimT = Math.max(0, swatAnimT - dt);
+    const k = 1 - swatAnimT / 0.32;
+    swatRing.visible = true;
+    swatRing.position.set(girl.position.x, 0.5, girl.position.z);
+    swatRing.scale.setScalar(0.4 + k * stat.swatR());
+    swatRing.material.opacity = (1 - k) * 0.7;
+  } else swatRing.visible = false;
+
+  // guide arrow toward nearest flower
+  let nearest = null, nd = 1e9;
+  for (const f of flowers) {
+    if (f.picked || f.carried) continue;
+    const d = Math.hypot(f.g.position.x - girl.position.x, f.g.position.z - girl.position.z);
+    if (d < nd) { nd = d; nearest = f; }
+  }
+  if (state === 'playing' && nearest && nd > 7) {
+    guideArrow.visible = true;
+    tmpA.copy(nearest.g.position).sub(girl.position).setY(0).normalize();
+    guideArrow.position.copy(girl.position).addScaledVector(tmpA, 1.6);
+    guideArrow.position.y = 0.5 + Math.sin(animT * 4) * 0.1;
+    guideArrow.rotation.y = Math.atan2(tmpA.x, tmpA.z);
+    guideArrow.children[0].material.color.setHex(nearest.rainbow ? 0x9d5eff : nearest.golden ? 0xf5a800 : 0xff7ab0);
+  } else guideArrow.visible = false;
+
+  // Ranooma
+  girlRefs.stars.visible = stunned > 0;
+  if (stunned > 0) {
+    girlRefs.stars.rotation.y += dt * 9;
+    girl.rotation.z = Math.sin(animT * 22) * 0.06;
+  } else if (!ultActive) girl.rotation.z *= 0.8;
+  girl.visible = !(invuln > 0 && !ultActive && stunned <= 0 && Math.floor(animT * 12) % 2 === 0);
+  if (girlRefs.bubble.visible) {
+    girlRefs.bubble.scale.setScalar(1 + Math.sin(animT * 3) * 0.05);
+    girlRefs.bubble.material.opacity = 0.13 + Math.sin(animT * 3) * 0.04;
+  }
+
+  if (ultActive) {
+    // pose (position/rotation/limbs) fully driven by updateMalekUlt
+  } else if (state === 'won') {
+    winT += dt;
+    if (winT < 1.5) {
+      girl.rotation.y += dt * 7;
+      girl.position.y = Math.abs(Math.sin(winT * 9)) * 0.35;
+    } else girl.position.y = 0;
+  } else if (moving && state === 'playing') {
+    const sw = Math.sin(walkT * 2.2);
+    girlRefs.arms[0].rotation.x = sw * 0.75;
+    if (swatArmT <= 0) girlRefs.arms[1].rotation.x = -0.55 + sw * 0.12;
+    girlRefs.legs[0].rotation.x = -sw * 0.85;
+    girlRefs.legs[1].rotation.x = sw * 0.85;
+    girl.position.y = Math.abs(Math.sin(walkT * 2.2)) * 0.07;
+    girlRefs.pigtails[0].rotation.z = sw * 0.12;
+    girlRefs.pigtails[1].rotation.z = -sw * 0.12;
+  } else {
+    girl.position.y = Math.sin(animT * 2) * 0.03 + 0.03;
+    girlRefs.arms[0].rotation.x *= 0.85;
+    girlRefs.legs[0].rotation.x *= 0.85;
+    girlRefs.legs[1].rotation.x *= 0.85;
+    if (swatArmT <= 0) girlRefs.arms[1].rotation.x += (-0.55 - girlRefs.arms[1].rotation.x) * 0.15;
+  }
+  // Swat melee: right arm swings forward like hitting with hand / basket
+  if (swatArmT > 0) {
+    swatArmT = Math.max(0, swatArmT - dt);
+    const k = 1 - swatArmT / 0.42;
+    const swing = Math.sin(k * Math.PI);
+    girlRefs.arms[1].rotation.x = -0.55 - swing * 2.1; // forward smash
+    girlRefs.arms[1].rotation.z = swing * 0.6;          // cross-body arc
+  } else {
+    girlRefs.arms[1].rotation.z *= 0.8;
+  }
+  // blow-a-kiss: left hand to lips then flings outward
+  if (kissAnimT > 0) {
+    kissAnimT = Math.max(0, kissAnimT - dt);
+    const k = 1 - kissAnimT / 0.55;
+    const lift = Math.sin(clamp(k * 1.4, 0, 1) * Math.PI);
+    girlRefs.arms[0].rotation.x = -lift * 1.9;   // hand up to mouth then out
+    girlRefs.arms[0].rotation.z = -lift * 0.4;
+  }
+  girlRefs.basketBlooms.forEach((bl, i) => { bl.visible = progress > i * Math.ceil(need / 3); });
+  girlShadow.position.set(girl.position.x, 0.025, girl.position.z);
+
+  updateMalek(dt);
+
+  if (state === 'playing' && soundOn && chimesOn && AC && animT > nextChime) {
+    tone(choice([523, 587, 659, 784, 880, 1047]), 1.4, 'triangle', 0.028);
+    nextChime = animT + rand(1.4, 3.2);
+  }
+  if (state === 'playing' || state === 'count' || state === 'won') drawMinimap();
+}
+
+/* ============================== house interior ============================== */
+let insideHouse = false;
+let intYaw = 0, intDragId = null, intDragPrevX = 0;
+let housePromptVisible = false;
+const INT_ORIGIN = new THREE.Vector3(0, 0, 300);
+const intItems = []; // { mesh, label, states, idx, mats }
+
+const INT_BED_COLORS  = [0xffb7d5, 0x9ad0ff, 0xc9a0ff];
+const INT_RUG_COLORS  = [0xff9ec6, 0xffe066, 0x9fe6b8];
+const INT_VASE_COLORS = [0xff8fb7, 0xc9a0ff, 0x8fc9ff, 0xffd24a];
+const INT_BOOK_COLORS = [0xff7a8c, 0xffd24a, 0x9ad0ff, 0x9fe6b8, 0xc9a0ff, 0xff9430];
+
+const intMalekLines = {
+  bed:   ["I chose the fluffiest pillow for you 😊", "Pink or blue? I coded both 💕", "Sweet dreams in here 🌙"],
+  desk:  ["That's where I coded this whole game for you! 💻✨", "Still got 1000 bugs to fix 😅 but it's our game!", "The cursor blinked all night for you 🩷"],
+  vase:  ["Fresh flowers just like the meadow 🌸", "Picked these digitally, no bees involved 😄", "They never wilt in here 💐"],
+  rug:   ["I rolled this rug out myself 🤭", "Softest rug in 3D space 🥰", "Tap to redecorate anytime!"],
+  shelf: ["All your favourite books 📚", "Top shelf is my coding journals… don't look 😳", "One day I'll fill it with our travel photos 🌍"],
+};
+
+function buildInterior() {
+  const G = new THREE.Group();
+  G.position.copy(INT_ORIGIN);
+  scene.add(G);
+
+  G.add(new THREE.HemisphereLight(0xfff2e4, 0xd49040, 1.6));
+  const lamp = new THREE.PointLight(0xffe8b0, 1.5, 22);
+  lamp.position.set(0, 3.4, 0); G.add(lamp);
+
+  // Floor
+  const floorMat = lam(0xb06a30);
+  G.add(function(){ const m = new THREE.Mesh(new THREE.BoxGeometry(10,0.2,10), floorMat); m.position.y=-0.1; return m; }());
+  for (let i = -4; i <= 4; i++) {
+    const p = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.21, 10), lam(0x966022));
+    p.position.set(i * 1.08, 0, 0); G.add(p);
+  }
+
+  // Ceiling
+  const ceil = new THREE.Mesh(new THREE.BoxGeometry(10,0.2,10), lam(0xfff5ec));
+  ceil.position.y = 3.9; G.add(ceil);
+
+  // Walls
+  const wMat = lam(0xfdf5e2);
+  const addWall = (w,h,d,x,y,z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), wMat); m.position.set(x,y,z); G.add(m); };
+  addWall(10,4,0.2, 0,2,-4.9);   // back
+  addWall(0.2,4,10, -4.9,2,0);   // left
+  addWall(0.2,4,10, 4.9,2,0);    // right
+  // Front wall with doorway
+  addWall(3.2,4,0.2, -3.4,2,4.9);
+  addWall(3.2,4,0.2, 3.4,2,4.9);
+  addWall(10,1.4,0.2, 0,3.3,4.9);
+
+  // Back window
+  const winFrame = new THREE.Mesh(new THREE.BoxGeometry(3.2,2.2,0.22), lam(0xffffff));
+  winFrame.position.set(0,2.1,-4.8); G.add(winFrame);
+  const winGlass = new THREE.Mesh(new THREE.BoxGeometry(2.8,1.8,0.12), bas(0xafe0f5,{transparent:true,opacity:0.5}));
+  winGlass.position.set(0,2.1,-4.76); G.add(winGlass);
+  // Window cross bars
+  const wb1 = new THREE.Mesh(new THREE.BoxGeometry(0.07,1.8,0.13), lam(0xffffff)); wb1.position.set(0,2.1,-4.73); G.add(wb1);
+  const wb2 = new THREE.Mesh(new THREE.BoxGeometry(2.8,0.07,0.13), lam(0xffffff)); wb2.position.set(0,2.1,-4.73); G.add(wb2);
+  // Sky outside window
+  const sky = new THREE.Mesh(new THREE.PlaneGeometry(2.8,1.8), bas(0x9ed9ff)); sky.position.set(0,2.1,-5.0); G.add(sky);
+  for (let c = 0; c < 3; c++) {
+    const cl = new THREE.Mesh(new THREE.SphereGeometry(0.25+c*0.08,8,6), bas(0xffffff,{transparent:true,opacity:0.88}));
+    cl.scale.y=0.55; cl.position.set(-0.9+c*0.9, 2.3+Math.sin(c)*0.15,-4.97); G.add(cl);
+  }
+
+  // Rug (center floor)
+  const rugMats = INT_RUG_COLORS.map(c => lam(c));
+  const rugMesh = new THREE.Mesh(new THREE.BoxGeometry(4,0.05,3), rugMats[+store.get('intRug',0)||0]);
+  rugMesh.position.set(0,0.02,0.5); G.add(rugMesh);
+  const rugBorder = new THREE.Mesh(new THREE.BoxGeometry(4.3,0.04,3.3), lam(0xfff3f8));
+  rugBorder.position.set(0,0.01,0.5); G.add(rugBorder);
+  intItems.push({ mesh: rugMesh, label: 'rug', lines: intMalekLines.rug, mats: rugMats, storeKey: 'intRug', idx: +store.get('intRug',0)||0 });
+
+  // BED (right side)
+  const bedG = new THREE.Group(); bedG.position.set(3.2,0,1.5); G.add(bedG);
+  bedG.add(function(){ const m=new THREE.Mesh(new THREE.BoxGeometry(2.4,0.35,3.8),lam(0xc8935a)); m.position.y=0.175; return m; }());
+  bedG.add(function(){ const m=new THREE.Mesh(new THREE.BoxGeometry(2.4,0.08,0.5),lam(0xc8935a)); m.position.set(0,0.44,1.75); return m; }());
+  const coverMats = INT_BED_COLORS.map(c => lam(c));
+  const coverMesh = new THREE.Mesh(new THREE.BoxGeometry(2.1,0.16,3.2), coverMats[+store.get('intBed',0)||0]);
+  coverMesh.position.set(0,0.44,-0.2); bedG.add(coverMesh);
+  const pillow = new THREE.Mesh(new THREE.BoxGeometry(1.6,0.14,0.55), lam(0xffffff));
+  pillow.position.set(0,0.54,1.3); bedG.add(pillow);
+  // Headboard
+  const hb = new THREE.Mesh(new THREE.BoxGeometry(2.5,1.2,0.18), lam(0xb87340)); hb.position.set(0,0.8,-1.95); bedG.add(hb);
+  for (let hx = -0.7; hx <= 0.7; hx += 0.7) {
+    const sp = new THREE.Mesh(new THREE.SphereGeometry(0.1,8,6), lam(0xffd24a)); sp.position.set(hx,1.35,-1.87); bedG.add(sp);
+  }
+  intItems.push({ mesh: coverMesh, label: 'bed', lines: intMalekLines.bed, mats: coverMats, storeKey: 'intBed', idx: +store.get('intBed',0)||0 });
+
+  // DESK + LAPTOP (left side)
+  const deskG = new THREE.Group(); deskG.position.set(-3.5,0,-2.5); G.add(deskG);
+  deskG.add(function(){ const m=new THREE.Mesh(new THREE.BoxGeometry(2.6,0.1,1.2),lam(0xa06840)); m.position.y=0.95; return m; }());
+  [-1.1,1.1].forEach(x=>{ const leg=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.95,0.1),lam(0x9a6030)); leg.position.set(x,0.475,0); deskG.add(leg); });
+  // Laptop base
+  const lapBase = new THREE.Mesh(new THREE.BoxGeometry(1.2,0.08,0.9), lam(0x5a6070));
+  lapBase.position.set(0,1.04,0.05); deskG.add(lapBase);
+  // Laptop screen
+  const lapScreen = new THREE.Mesh(new THREE.BoxGeometry(1.1,0.72,0.06), lam(0x3a4050));
+  lapScreen.position.set(0,1.48,-0.4); lapScreen.rotation.x=-0.3; deskG.add(lapScreen);
+  const screenGlo = new THREE.Mesh(new THREE.BoxGeometry(1.0,0.62,0.05), bas(0x4a8cff,{transparent:true,opacity:0.9}));
+  screenGlo.position.set(0,1.48,-0.37); screenGlo.rotation.x=-0.3; deskG.add(screenGlo);
+  const screenHeart = new THREE.Mesh(new THREE.SphereGeometry(0.09,8,6), bas(0xff5e9c));
+  screenHeart.position.set(0,1.54,-0.34); screenHeart.rotation.x=-0.3; deskG.add(screenHeart);
+  // Chair
+  const chairG = new THREE.Group(); chairG.position.set(0,0,0.85); deskG.add(chairG);
+  chairG.add(function(){ const m=new THREE.Mesh(new THREE.BoxGeometry(0.9,0.08,0.9),lam(0xff9ec6)); m.position.y=0.58; return m; }());
+  chairG.add(function(){ const m=new THREE.Mesh(new THREE.BoxGeometry(0.9,0.5,0.08),lam(0xff9ec6)); m.position.set(0,0.87,-0.41); return m; }());
+  [-0.38,0.38].forEach(x=>{ [-0.38,0.38].forEach(z=>{ const l=new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.04,0.58,6),lam(0xa06840)); l.position.set(x,0.29,z); chairG.add(l); }); });
+  intItems.push({ mesh: screenGlo, label: 'desk', lines: intMalekLines.desk, mats: null, storeKey: null, idx: 0 });
+
+  // BOOKSHELF (back left)
+  const shelfG = new THREE.Group(); shelfG.position.set(-3.8,0,-3.2); G.add(shelfG);
+  shelfG.add(function(){ const m=new THREE.Mesh(new THREE.BoxGeometry(1.8,3.0,0.5),lam(0xb87340)); m.position.y=1.5; return m; }());
+  for (let row = 0; row < 3; row++) {
+    let bx = -0.72;
+    for (let b = 0; b < 6; b++) {
+      const bh = 0.34 + Math.random()*0.14;
+      const bk = new THREE.Mesh(new THREE.BoxGeometry(0.16, bh, 0.36), lam(INT_BOOK_COLORS[b % INT_BOOK_COLORS.length]));
+      bk.position.set(bx, 0.58 + row*0.88 + bh/2, 0.08); shelfG.add(bk);
+      bx += 0.19 + Math.random()*0.04;
+    }
+    const shelf = new THREE.Mesh(new THREE.BoxGeometry(1.7,0.06,0.46), lam(0xa06238)); shelf.position.set(0, 0.5+row*0.88, 0.02); shelfG.add(shelf);
+  }
+  // Small plant on top
+  const plantStem = new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.09,0.22,8), lam(0x8a7a60)); plantStem.position.set(0.65,3.14,0.1); shelfG.add(plantStem);
+  for (let i=0;i<5;i++) { const a=(i/5)*Math.PI*2; const leaf=new THREE.Mesh(new THREE.SphereGeometry(0.1,6,5),lam(0x5cba6a)); leaf.position.set(0.65+Math.cos(a)*0.12,3.3,0.1+Math.sin(a)*0.12); shelfG.add(leaf); }
+  intItems.push({ mesh: shelfG.children[1], label: 'shelf', lines: intMalekLines.shelf, mats: null, storeKey: null, idx: 0 });
+
+  // FLOWER VASE (window sill)
+  const vaseG = new THREE.Group(); vaseG.position.set(1.5,0,-4.6); G.add(vaseG);
+  vaseG.add(function(){ const m=new THREE.Mesh(new THREE.CylinderGeometry(0.14,0.1,0.4,10),lam(0xff9ec6)); m.position.y=0.2; return m; }());
+  const vaseMats = INT_VASE_COLORS.map(c=>lam(c));
+  const vaseFl = new THREE.Mesh(new THREE.SphereGeometry(0.1,8,6), vaseMats[+store.get('intVase',0)||0]);
+  vaseFl.position.set(0,0.5,0); vaseG.add(vaseFl);
+  const vaseStem = new THREE.Mesh(new THREE.CylinderGeometry(0.025,0.025,0.2,6), lam(0x5cba6a)); vaseStem.position.set(0,0.36,0); vaseG.add(vaseStem);
+  intItems.push({ mesh: vaseFl, label: 'vase', lines: intMalekLines.vase, mats: vaseMats, storeKey: 'intVase', idx: +store.get('intVase',0)||0 });
+
+  // Window sill
+  const sill = new THREE.Mesh(new THREE.BoxGeometry(3.2,0.12,0.3), lam(0xffffff)); sill.position.set(0,1.15,-4.85); G.add(sill);
+
+  // Lamp (corner)
+  const lampG = new THREE.Group(); lampG.position.set(3.5,0,-3.5); G.add(lampG);
+  lampG.add(function(){ const m=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.07,1.5,8),lam(0xb06a30)); m.position.y=0.75; return m; }());
+  lampG.add(function(){ const m=new THREE.Mesh(new THREE.ConeGeometry(0.28,0.32,12,1,true),lam(0xffd24a,{side:THREE.DoubleSide})); m.position.y=1.6; return m; }());
+  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.1,8,6), bas(0xffe8b0,{transparent:true,opacity:0.9})); bulb.position.set(0,1.48,0); lampG.add(bulb);
+
+  // Decorative wall art (back wall)
+  const frame = new THREE.Mesh(new THREE.BoxGeometry(1.2,0.9,0.08), lam(0xb87340)); frame.position.set(-2,2.5,-4.82); G.add(frame);
+  const art = new THREE.Mesh(new THREE.BoxGeometry(1.0,0.7,0.06), bas(0xffe8f5)); art.position.set(-2,2.5,-4.78); G.add(art);
+  const artHeart = new THREE.Mesh(new THREE.SphereGeometry(0.12,8,6), bas(0xff5e9c)); artHeart.position.set(-2,2.55,-4.74); G.add(artHeart);
+
+  // Build raycaster targets for tap detection
+  intItems.forEach(it => { it.mesh.userData.intItem = it; });
+}
+buildInterior();
+
+function enterHouse() {
+  insideHouse = true;
+  state = 'house';
+  intYaw = 0;
+  $('housePrompt').classList.add('hidden');
+  $('hud').classList.add('hidden');
+  $('hud2').classList.add('hidden');
+  $('mini').classList.add('hidden');
+  $('swatBtn').classList.add('hidden');
+  $('sprintBtn').classList.add('hidden'); $('stamWrap').classList.add('hidden'); sprintBtnHeld = false;
+  $('kissBtn').classList.add('hidden');
+  $('exitHouseBtn').classList.remove('hidden');
+  $('interiorHint').classList.remove('hidden');
+  $('interiorHint').style.opacity = 1;
+  setTimeout(() => { $('interiorHint').style.opacity = 0; setTimeout(()=>$('interiorHint').classList.add('hidden'),600); }, 3200);
+  malekSay('house', "Welcome to your cozy room! 🏠 I decorated it just for you 💕");
+  sfx.click();
+}
+
+function exitHouse() {
+  insideHouse = false;
+  state = 'playing';
+  $('exitHouseBtn').classList.add('hidden');
+  $('interiorHint').classList.add('hidden');
+  $('hud').classList.remove('hidden');
+  $('hud2').classList.remove('hidden');
+  $('mini').classList.remove('hidden');
+  $('swatBtn').classList.remove('hidden');
+  $('sprintBtn').classList.remove('hidden'); $('stamWrap').classList.remove('hidden');
+  $('kissBtn').classList.remove('hidden');
+  sfx.click();
+  malekSay('houseOut', "Back to the meadow! Don't forget to pick flowers 🌸");
+}
+
+function updateInteriorCamera() {
+  const R = 5.5, H = 2.8;
+  const cx = INT_ORIGIN.x + Math.sin(intYaw) * R;
+  const cz = INT_ORIGIN.z + Math.cos(intYaw) * R;
+  camera.position.set(cx, INT_ORIGIN.y + H, cz);
+  camera.lookAt(INT_ORIGIN.x, INT_ORIGIN.y + 1.2, INT_ORIGIN.z);
+}
+
+function tapInterior(clientX, clientY) {
+  raycaster.setFromCamera({ x: (clientX/innerWidth)*2-1, y: -(clientY/innerHeight)*2+1 }, camera);
+  const meshes = intItems.map(it => it.mesh);
+  const hits = raycaster.intersectObjects(meshes, true);
+  if (!hits.length) return;
+  // walk up to find the intItem
+  let item = null;
+  for (const h of hits) {
+    let obj = h.object;
+    while (obj) { if (obj.userData.intItem) { item = obj.userData.intItem; break; } obj = obj.parent; }
+    if (item) break;
+  }
+  if (!item) return;
+  // cycle state
+  if (item.mats && item.storeKey) {
+    item.idx = (item.idx + 1) % item.mats.length;
+    item.mesh.material = item.mats[item.idx];
+    store.set(item.storeKey, item.idx);
+  }
+  burst(camera.position.clone().lerp(item.mesh.getWorldPosition(new THREE.Vector3()), 0.6), [0xff9ec6,0xffffff,0xffd24a], 8, 1.4, 1.0, 0.6);
+  sfx.buy();
+  malekSay(null, choice(item.lines));
+  if (navigator.vibrate) navigator.vibrate(20);
+}
+
+$('housePrompt').addEventListener('pointerdown', e => { e.preventDefault(); initAudio(); enterHouse(); });
+$('exitHouseBtn').addEventListener('click', () => { exitHouse(); });
+
+/* ============================== camera + main loop ============================== */
+const camFocus = new THREE.Vector3();
+
+function updateCamera(dt) {
+  if (insideHouse) { updateInteriorCamera(); return; }
+  camFocus.lerp(girl.position, 1 - Math.exp(-5 * dt));
+  shake = Math.max(0, shake - dt);
+  const sx = shake > 0 ? rand(-1, 1) * shake * 0.5 : 0;
+  const sy = shake > 0 ? rand(-1, 1) * shake * 0.5 : 0;
+  camera.position.set(camFocus.x + sx, camFocus.y + 8.8 + sy, camFocus.z + 11.0);
+  camera.lookAt(camFocus.x, 1.3, camFocus.z - 3.8);
+}
+
+const clock = new THREE.Clock();
+function tick(dt) {
+  animT += dt;
+  if (state === 'playing') gameplay(dt);
+  updateMalekUlt(dt); // runs regardless of state so carry/kiss/leave survive the 'won' transition
+  cosmetics(dt);
+  updateParticles(dt);
+  updateCamera(dt);
+  refreshHud();
+  renderer.render(scene, camera);
+}
+function frame() {
+  requestAnimationFrame(frame);
+  // clamp dt so a backgrounded tab/app can't inject a giant step on return,
+  // and guard the whole frame so one bad frame can't kill the rAF loop.
+  const dt = Math.max(0, Math.min(clock.getDelta(), 0.05));
+  try { tick(dt); } catch (e) { console.error('tick error', e); }
+}
+camFocus.copy(girl.position);
+frame();
+
+// debug handle (used by automated tests; harmless in production)
+window.__bb = {
+  renderer, scene, camera, tick, girl, flowers, bees, bunny, rainCloud, pickups, butterfly, crow,
+  startGame, setupLevel, levelCfg, stat, renderShop, doSwat, malekSay, malek,
+  get state() { return state; }, set state(v) { state = v; },
+  get progress() { return progress; }, get score() { return score; },
+  get timeLeft() { return timeLeft; }, get hearts() { return hearts; },
+  get petals() { return petals; }, set petals(v) { petals = v; hudDirty = true; },
+  get upg() { return upg; }, get cfg() { return cfg; }, get level() { return level; },
+  get shieldCharges() { return shieldCharges; }, get boostT() { return boostT; },
+  get swatCd() { return swatCd; },
+  get stamina() { return stamina; }, get exhausted() { return exhausted; }, get sprinting() { return sprinting; },
+  set sprintBtnHeld(v) { sprintBtnHeld = v; },
+  get ctrlMode() { return ctrlMode; }, setCtrl,
+  get tapTarget() { return tapTarget; },
+  blowKiss, triggerMalekUlt, malekChar,
+  get malekCharge() { return malekCharge; }, set malekCharge(v) { malekCharge = v; },
+  get ultActive() { return ultActive; }, get ultPhase() { return ultPhase; },
+  get savedLevel() { return savedLevel; }, get profileId() { return profileId; },
+  setProfile, _doLevelWon, refreshPlayBtn, exportSave, importSave,
+};

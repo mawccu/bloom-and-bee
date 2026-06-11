@@ -32,7 +32,8 @@ jobs:
           # ---------- project skeleton ----------
           mkdir -p project/app/src/main/java/com/malek/bloomandbee
           mkdir -p project/app/src/main/assets/www
-          cp index.html three.module.js project/app/src/main/assets/www/
+          cp index.html styles.css three.module.js project/app/src/main/assets/www/
+          cp -r js project/app/src/main/assets/www/
 
           cat > project/settings.gradle << 'EOF'
           rootProject.name = 'BloomAndBee'
