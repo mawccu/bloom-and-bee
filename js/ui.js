@@ -101,7 +101,7 @@ $('newGameBtn').addEventListener('click', () => {
   refreshPlayBtn();
 });
 $('nextBtn').addEventListener('click', () => { initAudio(); sfx.click(); startGame(S.level + 1); });
-$('againBtn').addEventListener('click', () => { initAudio(); sfx.click(); startGame(1); });
+$('againBtn').addEventListener('click', () => { initAudio(); sfx.click(); startGame(S.level, true); });
 $('menuBtn').addEventListener('click', () => { sfx.click(); toMenu(); });
 $('quitBtn').addEventListener('click', () => { sfx.click(); toMenu(); });
 $('pauseBtn').addEventListener('click', () => {
