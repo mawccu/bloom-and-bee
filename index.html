@@ -228,6 +228,23 @@
   #saveBox .saveDivider { border:none; border-top:2px dashed #e0b0d8; margin:2px 0; }
   #saveBox .saveRow { display:flex; gap:8px; }
   #saveBox .saveRow .btn { flex:1; margin:0; font-size:14px; padding:10px 8px; }
+
+  /* ---------- profile modal ---------- */
+  #profileModal { position:fixed; inset:0; z-index:60; background:rgba(100,60,130,.78);
+    display:flex; align-items:center; justify-content:center; padding:18px; }
+  #profileModal.hidden { display:none !important; }
+  #profileBox { background:#fff8ff; border-radius:24px; padding:22px 20px 18px;
+    width:min(380px,94vw); box-shadow:0 10px 40px rgba(120,60,160,.35);
+    display:flex; flex-direction:column; gap:12px; }
+  #profileBox h2 { font-family:'Baloo 2',sans-serif; font-size:22px; color:#7a4f6d;
+    font-weight:800; text-align:center; margin:0; }
+  #profileBox p { font-size:13px; color:#8a6a8a; margin:0; line-height:1.4; }
+  #profileBox input { width:100%; border-radius:12px; border:2px solid #e0b0d8;
+    padding:12px; font-size:16px; font-family:inherit; color:#5a3a6a;
+    background:#fff; outline:none; text-align:center; box-sizing:border-box; }
+  #profileBox input:focus { border-color:#b070d0; }
+  #profileBox .saveRow { display:flex; gap:8px; }
+  #profileBox .saveRow .btn { flex:1; margin:0; font-size:14px; padding:10px 8px; }
 </style>
 </head>
 <body>
@@ -293,6 +310,7 @@
   <div class="custLabel">Ranooma's hair</div>
   <div class="swatches" id="hairSw"></div>
   <button id="playBtn" class="btn">▶ Play</button>
+  <button id="newGameBtn" class="tog hidden">🔁 Start over from Lv 1</button>
   <div class="togRow">
     <button id="togSnd" class="tog">🔊 Sound</button>
     <button id="togChime" class="tog">🎵 Chimes</button>
@@ -300,7 +318,10 @@
   </div>
   <div id="bestLine" class="statSmall hidden"></div>
   <div class="credit">made with 💕 by Malek, for Ranooma</div>
-  <button id="saveBtn" class="tog" style="margin-top:4px;font-size:13px;padding:6px 16px">💾 Save / Restore progress</button>
+  <div class="togRow">
+    <button id="saveBtn" class="tog" style="margin-top:4px;font-size:13px;padding:6px 16px">💾 Save / Restore progress</button>
+    <button id="switchProfileBtn" class="tog" style="margin-top:4px;font-size:13px;padding:6px 16px">👤 Switch profile</button>
+  </div>
 </div>
 
 <!-- Malek win celebration -->
@@ -330,6 +351,19 @@
     <p>Already have a save code? Paste it below to restore:</p>
     <textarea id="saveCodeIn" placeholder="Paste your save code here..."></textarea>
     <button id="loadSaveBtn" class="btn" style="background:linear-gradient(180deg,#7ed957,#4fae2a);box-shadow:0 5px 0 #2f8a10,0 8px 20px rgba(79,174,42,.4)">✅ Restore & reload</button>
+  </div>
+</div>
+
+<!-- Profile picker -->
+<div id="profileModal" class="hidden">
+  <div id="profileBox">
+    <h2 id="profileTitle">Who's playing? 🌸</h2>
+    <p>Enter your name or a secret code. This keeps your progress separate from anyone else who plays on this device.</p>
+    <input id="profileInput" type="text" maxlength="24" placeholder="e.g. Ranooma or 1337" autocomplete="off">
+    <div class="saveRow">
+      <button id="profileGoBtn" class="btn">💕 Let's go!</button>
+      <button id="profileCancelBtn" class="btn alt hidden">✖ Cancel</button>
+    </div>
   </div>
 </div>
 
@@ -376,10 +410,32 @@ function lerpAngle(a, b, t) {
 const easeOutBack = t => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
 function lam(c, opts = {}) { return new THREE.MeshLambertMaterial({ color: c, ...opts }); }
 function bas(c, opts = {}) { return new THREE.MeshBasicMaterial({ color: c, ...opts }); }
+/* ============================== profiles ============================== */
+const PROFILE_KEY = 'bloombee_profile';
+const PROFILE_DATA_KEYS = ['best','bestlvl','curlevel','hd','snd','chime','ctrl','dress','hair','intRug','intBed','intVase'];
+let profileId = localStorage.getItem(PROFILE_KEY) || '';
+const nsKey = k => profileId ? `bloombee_${profileId}_${k}` : 'bloombee_' + k;
 const store = {
-  get: (k, d) => { const v = localStorage.getItem('bloombee_' + k); return v === null ? d : v; },
-  set: (k, v) => localStorage.setItem('bloombee_' + k, v),
+  get: (k, d) => { const v = localStorage.getItem(nsKey(k)); return v === null ? d : v; },
+  set: (k, v) => localStorage.setItem(nsKey(k), v),
 };
+function setProfile(id) {
+  id = id.trim().slice(0, 24);
+  if (!id) return false;
+  if (!localStorage.getItem(PROFILE_KEY)) {
+    // first-ever profile pick: bring along any pre-profile saves so progress isn't lost
+    PROFILE_DATA_KEYS.forEach(k => {
+      const legacy = localStorage.getItem('bloombee_' + k);
+      if (legacy !== null) {
+        localStorage.setItem(`bloombee_${id}_${k}`, legacy);
+        localStorage.removeItem('bloombee_' + k);
+      }
+    });
+  }
+  localStorage.setItem(PROFILE_KEY, id);
+  location.reload();
+  return true;
+}
 
 /* ============================== renderer / scene ============================== */
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -1893,6 +1949,7 @@ const stat = {
 /* ============================== game state ============================== */
 let state = 'menu';
 let level = 1, score = 0, best = +store.get('best', 0), bestLvl = +store.get('bestlvl', 0);
+let savedLevel = Math.max(1, parseInt(store.get('curlevel', '1'), 10) || 1);
 let totalPicked = 0;
 let progress = 0, need = 10, timeLeft = 55, timeMax = 55;
 let combo = 0, lastPickAt = -99;
@@ -1978,8 +2035,8 @@ function startCountdown(then) {
 }
 
 const CTRL_HINTS = { stick: 'Drag anywhere to walk! 👉', fixed: 'Use the stick to walk! 🎮', tap: 'Tap where Ranooma should go! 👆' };
-function startGame(fromLevel) {
-  if (fromLevel === 1) {
+function startGame(fromLevel, fresh = fromLevel === 1) {
+  if (fresh) {
     score = 0; totalPicked = 0; petals = 0; hearts = MAX_HEARTS;
     upg = { shoes: 0, basket: 0, wand: 0, charm: 0, time: 0, lucky: 0, shield: 0 };
     malekCharge = 0; malekWasReady = false;
@@ -1995,7 +2052,7 @@ function startGame(fromLevel) {
   $('swatBtn').classList.remove('hidden');
   $('sprintBtn').classList.remove('hidden'); $('stamWrap').classList.remove('hidden');
   $('kissBtn').classList.remove('hidden');
-  if (fromLevel === 1) { $('hint').textContent = CTRL_HINTS[ctrlMode]; $('hint').classList.remove('hidden'); $('hint').style.opacity = 1;
+  if (fresh) { $('hint').textContent = CTRL_HINTS[ctrlMode]; $('hint').classList.remove('hidden'); $('hint').style.opacity = 1;
     malekSay('sprint', "Hold 💨 (or press Shift on PC) to sprint — but you'll get tired, so pace yourself! 🏃‍♀️"); }
   startCountdown(() => { state = 'playing'; if (ctrlMode === 'fixed') showFixedJoy(); });
 }
@@ -2014,6 +2071,7 @@ function _doLevelWon(fromUlt) {
   hearts = Math.min(MAX_HEARTS, hearts + 1);
   best = Math.max(best, score); store.set('best', best);
   bestLvl = Math.max(bestLvl, level); store.set('bestlvl', bestLvl);
+  savedLevel = Math.max(savedLevel, level + 1); store.set('curlevel', savedLevel);
   sfx.win();
   if (!fromUlt) endMalekUlt(); // let ult finish its leave animation on its own
   clearFlowers(true); clearPickups(); crowHide();
@@ -2080,6 +2138,7 @@ function toMenu() {
   $('kissBtn').classList.add('hidden');
   $('malek').classList.remove('show');
   refreshBestLine();
+  refreshPlayBtn();
   $('titleScreen').classList.remove('hidden');
 }
 function hideAllScreens() {
@@ -2095,6 +2154,15 @@ function refreshBestLine() {
   if (best > 0) {
     $('bestLine').textContent = `🏆 Best: ${best} · reached level ${bestLvl}`;
     $('bestLine').classList.remove('hidden');
+  }
+}
+function refreshPlayBtn() {
+  if (savedLevel > 1) {
+    $('playBtn').textContent = `▶ Continue (Lv ${savedLevel})`;
+    $('newGameBtn').classList.remove('hidden');
+  } else {
+    $('playBtn').textContent = '▶ Play';
+    $('newGameBtn').classList.add('hidden');
   }
 }
 
@@ -2367,12 +2435,12 @@ function inputVec() {
   return [joyVX, joyVY];
 }
 /* ============================== save / restore ============================== */
-const SAVE_KEYS = ['best','bestlvl','hd','snd','chime','ctrl','dress','hair','intRug','intBed','intVase'];
+const SAVE_KEYS = PROFILE_DATA_KEYS;
 
 function exportSave() {
   const data = {};
   SAVE_KEYS.forEach(k => {
-    const v = localStorage.getItem('bloombee_' + k);
+    const v = store.get(k, null);
     if (v !== null) data[k] = v;
   });
   return btoa(JSON.stringify(data));
@@ -2381,7 +2449,7 @@ function exportSave() {
 function importSave(code) {
   try {
     const data = JSON.parse(atob(code.trim()));
-    SAVE_KEYS.forEach(k => { if (data[k] !== undefined) localStorage.setItem('bloombee_' + k, data[k]); });
+    SAVE_KEYS.forEach(k => { if (data[k] !== undefined) store.set(k, data[k]); });
     return true;
   } catch(e) { return false; }
 }
@@ -2413,6 +2481,28 @@ $('loadSaveBtn').addEventListener('click', () => {
   }
 });
 
+/* ============================== profile UI ============================== */
+function showProfileScreen(isFirstRun) {
+  $('profileInput').value = isFirstRun ? '' : profileId;
+  $('profileTitle').textContent = isFirstRun ? "Who's playing? 🌸" : 'Switch profile';
+  $('profileCancelBtn').classList.toggle('hidden', isFirstRun);
+  $('profileModal').classList.remove('hidden');
+  $('profileInput').focus();
+}
+$('profileGoBtn').addEventListener('click', () => {
+  const id = $('profileInput').value.trim();
+  if (!id) {
+    $('profileInput').style.borderColor = '#ff4444';
+    setTimeout(() => $('profileInput').style.borderColor = '', 1200);
+    return;
+  }
+  setProfile(id);
+});
+$('profileInput').addEventListener('keydown', e => { if (e.key === 'Enter') $('profileGoBtn').click(); });
+$('profileCancelBtn').addEventListener('click', () => $('profileModal').classList.add('hidden'));
+$('switchProfileBtn').addEventListener('click', () => { sfx.click(); showProfileScreen(false); });
+if (!localStorage.getItem(PROFILE_KEY)) showProfileScreen(true);
+
 /* ============================== UI wiring ============================== */
 $('malekWinOk').addEventListener('click', () => {
   sfx.click();
@@ -2426,7 +2516,12 @@ $('malekWinOk').addEventListener('click', () => {
   $('levelScreen').classList.remove('hidden');
   _winShopData = null;
 });
-$('playBtn').addEventListener('click', () => { initAudio(); sfx.click(); startGame(1); });
+$('playBtn').addEventListener('click', () => { initAudio(); sfx.click(); startGame(savedLevel, true); });
+$('newGameBtn').addEventListener('click', () => {
+  sfx.click();
+  savedLevel = 1; store.set('curlevel', 1);
+  refreshPlayBtn();
+});
 $('nextBtn').addEventListener('click', () => { initAudio(); sfx.click(); startGame(level + 1); });
 $('againBtn').addEventListener('click', () => { initAudio(); sfx.click(); startGame(1); });
 $('menuBtn').addEventListener('click', () => { sfx.click(); toMenu(); });
@@ -2514,7 +2609,7 @@ $('togHD').addEventListener('click', () => {
   hdOn = !hdOn; store.set('hd', hdOn ? '1' : '0');
   applyQuality(); syncToggles(); initAudio(); sfx.click();
 });
-syncSndBtn(); syncToggles(); syncCtrl(); refreshBestLine();
+syncSndBtn(); syncToggles(); syncCtrl(); refreshBestLine(); refreshPlayBtn();
 
 /* ============================== HUD + minimap ============================== */
 let hudDirty = true, lastBarW = -1;
@@ -3242,6 +3337,8 @@ window.__bb = {
   blowKiss, triggerMalekUlt, malekChar,
   get malekCharge() { return malekCharge; }, set malekCharge(v) { malekCharge = v; },
   get ultActive() { return ultActive; }, get ultPhase() { return ultPhase; },
+  get savedLevel() { return savedLevel; }, get profileId() { return profileId; },
+  setProfile, _doLevelWon, refreshPlayBtn, exportSave, importSave,
 };
 </script>
 </body>
