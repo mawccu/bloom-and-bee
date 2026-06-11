@@ -2552,9 +2552,31 @@ $('sndBtn').addEventListener('click', () => {
   syncSndBtn(); syncToggles();
   if (soundOn) { initAudio(); sfx.click(); }
 });
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden && state === 'playing') { state = 'paused'; hideJoy(); $('pauseScreen').classList.remove('hidden'); }
-});
+// iOS Safari (and other mobile browsers) can suspend rAF/audio while backgrounded and drop
+// pointerup/pointercancel events, leaving the joystick/sprint/keys latched and the clock
+// holding a huge elapsed time. Reset everything cleanly on the way out and back in.
+function resetStuckInput() {
+  hideJoy();
+  knobEl.style.transform = 'translate(-50%,-50%)';
+  tapPointerId = null;
+  intDragId = null;
+  sprintBtnHeld = false;
+  keys.clear();
+}
+function onAppHidden() {
+  resetStuckInput();
+  if (state === 'playing') { state = 'paused'; $('pauseScreen').classList.remove('hidden'); }
+}
+function onAppVisible() {
+  clock.getDelta(); // discard time spent backgrounded so the next frame's dt stays tiny
+  resetStuckInput();
+  if (AC && AC.state === 'suspended') AC.resume().catch(() => {});
+}
+document.addEventListener('visibilitychange', () => { document.hidden ? onAppHidden() : onAppVisible(); });
+addEventListener('pagehide', onAppHidden);
+addEventListener('pageshow', onAppVisible);
+addEventListener('blur', onAppHidden);
+addEventListener('focus', onAppVisible);
 
 // dress-up swatches
 function buildSwatches(elId, colors, key, mat) {
@@ -3232,4 +3254,117 @@ function enterHouse() {
   $('exitHouseBtn').classList.remove('hidden');
   $('interiorHint').classList.remove('hidden');
   $('interiorHint').style.opacity = 1;
-  setTimeout(() => { $('interiorHint').style.o
+  setTimeout(() => { $('interiorHint').style.opacity = 0; setTimeout(()=>$('interiorHint').classList.add('hidden'),600); }, 3200);
+  malekSay('house', "Welcome to your cozy room! 🏠 I decorated it just for you 💕");
+  sfx.click();
+}
+
+function exitHouse() {
+  insideHouse = false;
+  state = 'playing';
+  $('exitHouseBtn').classList.add('hidden');
+  $('interiorHint').classList.add('hidden');
+  $('hud').classList.remove('hidden');
+  $('hud2').classList.remove('hidden');
+  $('mini').classList.remove('hidden');
+  $('swatBtn').classList.remove('hidden');
+  $('sprintBtn').classList.remove('hidden'); $('stamWrap').classList.remove('hidden');
+  $('kissBtn').classList.remove('hidden');
+  sfx.click();
+  malekSay('houseOut', "Back to the meadow! Don't forget to pick flowers 🌸");
+}
+
+function updateInteriorCamera() {
+  const R = 5.5, H = 2.8;
+  const cx = INT_ORIGIN.x + Math.sin(intYaw) * R;
+  const cz = INT_ORIGIN.z + Math.cos(intYaw) * R;
+  camera.position.set(cx, INT_ORIGIN.y + H, cz);
+  camera.lookAt(INT_ORIGIN.x, INT_ORIGIN.y + 1.2, INT_ORIGIN.z);
+}
+
+function tapInterior(clientX, clientY) {
+  raycaster.setFromCamera({ x: (clientX/innerWidth)*2-1, y: -(clientY/innerHeight)*2+1 }, camera);
+  const meshes = intItems.map(it => it.mesh);
+  const hits = raycaster.intersectObjects(meshes, true);
+  if (!hits.length) return;
+  // walk up to find the intItem
+  let item = null;
+  for (const h of hits) {
+    let obj = h.object;
+    while (obj) { if (obj.userData.intItem) { item = obj.userData.intItem; break; } obj = obj.parent; }
+    if (item) break;
+  }
+  if (!item) return;
+  // cycle state
+  if (item.mats && item.storeKey) {
+    item.idx = (item.idx + 1) % item.mats.length;
+    item.mesh.material = item.mats[item.idx];
+    store.set(item.storeKey, item.idx);
+  }
+  burst(camera.position.clone().lerp(item.mesh.getWorldPosition(new THREE.Vector3()), 0.6), [0xff9ec6,0xffffff,0xffd24a], 8, 1.4, 1.0, 0.6);
+  sfx.buy();
+  malekSay(null, choice(item.lines));
+  if (navigator.vibrate) navigator.vibrate(20);
+}
+
+$('housePrompt').addEventListener('pointerdown', e => { e.preventDefault(); initAudio(); enterHouse(); });
+$('exitHouseBtn').addEventListener('click', () => { exitHouse(); });
+
+/* ============================== camera + main loop ============================== */
+const camFocus = new THREE.Vector3();
+
+function updateCamera(dt) {
+  if (insideHouse) { updateInteriorCamera(); return; }
+  camFocus.lerp(girl.position, 1 - Math.exp(-5 * dt));
+  shake = Math.max(0, shake - dt);
+  const sx = shake > 0 ? rand(-1, 1) * shake * 0.5 : 0;
+  const sy = shake > 0 ? rand(-1, 1) * shake * 0.5 : 0;
+  camera.position.set(camFocus.x + sx, camFocus.y + 8.8 + sy, camFocus.z + 11.0);
+  camera.lookAt(camFocus.x, 1.3, camFocus.z - 3.8);
+}
+
+const clock = new THREE.Clock();
+function tick(dt) {
+  animT += dt;
+  if (state === 'playing') gameplay(dt);
+  updateMalekUlt(dt); // runs regardless of state so carry/kiss/leave survive the 'won' transition
+  cosmetics(dt);
+  updateParticles(dt);
+  updateCamera(dt);
+  refreshHud();
+  renderer.render(scene, camera);
+}
+function frame() {
+  requestAnimationFrame(frame);
+  // clamp dt so a backgrounded tab/app can't inject a giant step on return,
+  // and guard the whole frame so one bad frame can't kill the rAF loop.
+  const dt = Math.max(0, Math.min(clock.getDelta(), 0.05));
+  try { tick(dt); } catch (e) { console.error('tick error', e); }
+}
+camFocus.copy(girl.position);
+frame();
+
+// debug handle (used by automated tests; harmless in production)
+window.__bb = {
+  renderer, scene, camera, tick, girl, flowers, bees, bunny, rainCloud, pickups, butterfly, crow,
+  startGame, setupLevel, levelCfg, stat, renderShop, doSwat, malekSay, malek,
+  get state() { return state; }, set state(v) { state = v; },
+  get progress() { return progress; }, get score() { return score; },
+  get timeLeft() { return timeLeft; }, get hearts() { return hearts; },
+  get petals() { return petals; }, set petals(v) { petals = v; hudDirty = true; },
+  get upg() { return upg; }, get cfg() { return cfg; }, get level() { return level; },
+  get shieldCharges() { return shieldCharges; }, get boostT() { return boostT; },
+  get swatCd() { return swatCd; },
+  get stamina() { return stamina; }, get exhausted() { return exhausted; }, get sprinting() { return sprinting; },
+  set sprintBtnHeld(v) { sprintBtnHeld = v; },
+  get ctrlMode() { return ctrlMode; }, setCtrl,
+  get tapTarget() { return tapTarget; },
+  blowKiss, triggerMalekUlt, malekChar,
+  get malekCharge() { return malekCharge; }, set malekCharge(v) { malekCharge = v; },
+  get ultActive() { return ultActive; }, get ultPhase() { return ultPhase; },
+  get savedLevel() { return savedLevel; }, get profileId() { return profileId; },
+  setProfile, _doLevelWon, refreshPlayBtn, exportSave, importSave,
+};
+</script>
+</body>
+</html>
