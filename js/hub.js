@@ -78,30 +78,36 @@ function makePath(G, x1, z1, x2, z2, w = 1.7) {
 }
 /* -------- 3-D floating canvas-sprite name label -------- */
 const floatingLabels = [];
+const labelRedraws = [];   // re-rendered once the bundled emoji font has loaded
+// 'BloomEmoji' first so emoji come from the bundled Twemoji woff2; "Baloo 2" for the Latin text
+const LABEL_FONT = font => `bold ${font}px 'BloomEmoji', "Baloo 2", system-ui, sans-serif`;
 function makeFloatingLabel(G, text, color, x, baseY, z) {
   const W = 480, H = 96, PAD = 8, STRIPE = 16;
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
   const ctx = cv.getContext('2d');
-  // pill background
-  ctx.shadowColor = 'rgba(160,90,140,0.38)'; ctx.shadowBlur = 18;
-  ctx.fillStyle = 'rgba(255,255,255,0.97)';
-  ctx.beginPath(); ctx.roundRect(PAD, PAD, W - 2 * PAD, H - 2 * PAD, 26); ctx.fill();
-  ctx.shadowBlur = 0;
-  // colour top stripe
-  ctx.fillStyle = '#' + color.toString(16).padStart(6, '0');
-  ctx.beginPath(); ctx.roundRect(PAD, PAD, W - 2 * PAD, STRIPE, [26, 26, 0, 0]); ctx.fill();
-  // auto-fit text so nothing clips
-  let fs = 38;
-  ctx.font = `bold ${fs}px "Baloo 2", system-ui, sans-serif`;
-  while (ctx.measureText(text).width > W - 52 && fs > 20) {
-    fs -= 2;
-    ctx.font = `bold ${fs}px "Baloo 2", system-ui, sans-serif`;
-  }
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#6d3f62';
-  // dead-centre (both axes) of the white panel below the colour stripe
-  ctx.fillText(text, W / 2, (PAD + STRIPE + (H - PAD)) / 2);
   const tex = new THREE.CanvasTexture(cv);
+  const draw = () => {
+    ctx.clearRect(0, 0, W, H);
+    // pill background
+    ctx.shadowColor = 'rgba(160,90,140,0.38)'; ctx.shadowBlur = 18;
+    ctx.fillStyle = 'rgba(255,255,255,0.97)';
+    ctx.beginPath(); ctx.roundRect(PAD, PAD, W - 2 * PAD, H - 2 * PAD, 26); ctx.fill();
+    ctx.shadowBlur = 0;
+    // colour top stripe
+    ctx.fillStyle = '#' + color.toString(16).padStart(6, '0');
+    ctx.beginPath(); ctx.roundRect(PAD, PAD, W - 2 * PAD, STRIPE, [26, 26, 0, 0]); ctx.fill();
+    // auto-fit text so nothing clips
+    let fs = 38;
+    ctx.font = LABEL_FONT(fs);
+    while (ctx.measureText(text).width > W - 52 && fs > 20) { fs -= 2; ctx.font = LABEL_FONT(fs); }
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#6d3f62';
+    // dead-centre (both axes) of the white panel below the colour stripe
+    ctx.fillText(text, W / 2, (PAD + STRIPE + (H - PAD)) / 2);
+    tex.needsUpdate = true;
+  };
+  draw();
+  labelRedraws.push(draw);
   const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, fog: false });
   const sprite = new THREE.Sprite(mat);
   // keep aspect ratio: sprite width/height = W/H
@@ -109,6 +115,13 @@ function makeFloatingLabel(G, text, color, x, baseY, z) {
   sprite.position.set(x, baseY, z);
   sprite.userData.baseY = baseY;
   G.add(sprite); floatingLabels.push(sprite);
+}
+// the woff2 isn't ready when the signs are first drawn at module load — re-render
+// them with the real emoji glyphs as soon as the font finishes loading.
+if (document.fonts && document.fonts.load) {
+  document.fonts.load("38px 'BloomEmoji'", '🛍️🏠🌼')
+    .then(() => { labelRedraws.forEach(fn => fn()); })
+    .catch(() => {});
 }
 function makeBeacon(G, color, x, baseY, z) {
   const beacon = new THREE.Mesh(new THREE.OctahedronGeometry(0.38, 0),
