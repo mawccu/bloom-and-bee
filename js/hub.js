@@ -75,14 +75,39 @@ function makePath(G, x1, z1, x2, z2, w = 1.7) {
   seg.rotation.x = -Math.PI / 2; seg.rotation.z = -Math.atan2(dz, dx) + Math.PI / 2;
   seg.position.set((x1 + x2) / 2, 0.03, (z1 + z2) / 2); G.add(seg);
 }
-function makeSign(G, x, z, color) {
-  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 1.5, 6), lam(0x9a6b4f));
-  pole.position.set(x, 0.75, z + 2.4); G.add(pole);
-  const board = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.8, 0.12), lam(color));
-  board.position.set(x, 1.6, z + 2.4); G.add(board);
-  const beacon = new THREE.Mesh(new THREE.OctahedronGeometry(0.32, 0), bas(color, { transparent: true, opacity: 0.92, fog: false }));
-  beacon.position.set(x, 3.6, z); G.add(beacon);
-  beacons.push(beacon);
+/* -------- 3-D floating canvas-sprite name label -------- */
+const floatingLabels = [];
+function makeFloatingLabel(G, text, color, x, baseY, z) {
+  const W = 320, H = 80;
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+  // pill shadow
+  ctx.shadowColor = 'rgba(160,90,140,0.35)'; ctx.shadowBlur = 14;
+  ctx.fillStyle = 'rgba(255,255,255,0.95)';
+  ctx.beginPath(); ctx.roundRect(8, 8, W - 16, H - 16, 22); ctx.fill();
+  ctx.shadowBlur = 0;
+  // colour top stripe
+  ctx.fillStyle = '#' + color.toString(16).padStart(6, '0');
+  ctx.beginPath(); ctx.roundRect(8, 8, W - 16, 14, [22, 22, 0, 0]); ctx.fill();
+  // label text
+  ctx.font = 'bold 34px "Baloo 2", system-ui, sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#6d3f62';
+  ctx.fillText(text, W / 2, H / 2 + 6);
+  const tex = new THREE.CanvasTexture(cv);
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, fog: false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(4.6, 1.15, 1);
+  sprite.position.set(x, baseY, z);
+  sprite.userData.baseY = baseY;
+  G.add(sprite); floatingLabels.push(sprite);
+}
+function makeBeacon(G, color, x, baseY, z) {
+  const beacon = new THREE.Mesh(new THREE.OctahedronGeometry(0.38, 0),
+    bas(color, { transparent: true, opacity: 0.92, fog: false }));
+  beacon.position.set(x, baseY, z);
+  beacon.userData.baseY = baseY;
+  G.add(beacon); beacons.push(beacon);
 }
 
 const beacons = [];
@@ -154,67 +179,89 @@ function buildHub() {
 
 /* ---------- the three entrance buildings ---------- */
 function buildMeadowGate(G, b) {
-  // a flowery green archway leading out to the meadow
-  [-1.6, 1.6].forEach(s => {
-    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 3, 8), lam(0x7ed489));
-    post.position.set(b.x + s, 1.5, b.z); G.add(post);
+  // bigger floral archway — posts taller + wider
+  [-2.2, 2.2].forEach(s => {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.34, 4.5, 8), lam(0x7ed489));
+    post.position.set(b.x + s, 2.25, b.z); G.add(post);
   });
-  const arch = new THREE.Mesh(new THREE.TorusGeometry(1.6, 0.24, 8, 16, Math.PI), lam(0x6ecb7d));
-  arch.position.set(b.x, 3, b.z); G.add(arch);
-  for (let i = 0; i < 9; i++) {
-    const t = i / 8, ang = Math.PI * t;
-    const fl = new THREE.Mesh(new THREE.SphereGeometry(0.2, 6, 5), lam(choice([0xff8fb7, 0xffd24a, 0xc9a0ff, 0xff7a9c])));
-    fl.position.set(b.x - Math.cos(ang) * 1.6, 3 + Math.sin(ang) * 1.6, b.z); G.add(fl);
+  const arch = new THREE.Mesh(new THREE.TorusGeometry(2.2, 0.28, 8, 18, Math.PI), lam(0x6ecb7d));
+  arch.position.set(b.x, 4.5, b.z); G.add(arch);
+  for (let i = 0; i < 11; i++) {
+    const t = i / 10, ang = Math.PI * t;
+    const fl = new THREE.Mesh(new THREE.SphereGeometry(0.24, 6, 5), lam(choice([0xff8fb7, 0xffd24a, 0xc9a0ff, 0xff7a9c])));
+    fl.position.set(b.x - Math.cos(ang) * 2.2, 4.5 + Math.sin(ang) * 2.2, b.z); G.add(fl);
   }
-  // a hint of meadow grass + tulips through the gate
-  for (let i = 0; i < 4; i++) makeFlowers(G, b.x - 1 + i * 0.7, b.z - 1.3, 3);
-  makeSign(G, b.x, b.z, 0x6ecb7d);
-}
-function buildShopFront(G, b) {
-  const base = new THREE.Mesh(new THREE.BoxGeometry(3.6, 2.6, 3), lam(0xeaf4ff));
-  base.position.set(b.x, 1.3, b.z); G.add(base);
-  const roof = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.4, 3.6), lam(0x5aa8f0));
-  roof.position.set(b.x, 2.75, b.z); G.add(roof);
-  // striped awning
-  for (let i = 0; i < 6; i++) {
-    const a = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.32, 0.9), lam(i % 2 ? 0xffffff : 0xff7a8c));
-    a.position.set(b.x - 1.4 + i * 0.56, 2.05, b.z + 1.7); a.rotation.x = 0.42; G.add(a);
-  }
-  // door + windows
-  const door = new THREE.Mesh(new THREE.BoxGeometry(1, 1.7, 0.12), lam(0x3d7fc4));
-  door.position.set(b.x, 0.85, b.z + 1.51); G.add(door);
-  [-1.1, 1.1].forEach(x => {
-    const w = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.1), lam(0xbfeaf5));
-    w.position.set(b.x + x, 1.5, b.z + 1.52); G.add(w);
-  });
-  const bag = new THREE.Mesh(new THREE.SphereGeometry(0.28, 8, 7), lam(0xffd24a));
-  bag.position.set(b.x, 3.5, b.z); G.add(bag); // little shopping-bag marker handled by sign too
-  makeSign(G, b.x, b.z, 0x5aa8f0);
-}
-function buildCottage(G, b) {
-  const base = new THREE.Mesh(new THREE.BoxGeometry(3.2, 2.4, 3), lam(0xfff0dc));
-  base.position.set(b.x, 1.2, b.z); G.add(base);
-  const roof = new THREE.Mesh(new THREE.ConeGeometry(2.7, 1.8, 4), lam(0xff9ec6));
-  roof.position.set(b.x, 3.2, b.z); roof.rotation.y = Math.PI / 4; G.add(roof);
-  const chimney = new THREE.Mesh(new THREE.BoxGeometry(0.45, 1, 0.45), lam(0xd8a07a));
-  chimney.position.set(b.x + 0.9, 3.6, b.z - 0.3); G.add(chimney);
-  const door = new THREE.Mesh(new THREE.BoxGeometry(1, 1.7, 0.12), lam(0xb97a4e));
-  door.position.set(b.x, 0.85, b.z + 1.51); G.add(door);
-  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.07, 6, 5), lam(0xffd24a));
-  knob.position.set(b.x + 0.3, 0.85, b.z + 1.58); G.add(knob);
-  [-1, 1].forEach(x => {
-    const frame = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.1), lam(0xffffff));
-    frame.position.set(b.x + x, 1.6, b.z + 1.52); G.add(frame);
-    const glass = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.11), lam(0xafe0f5));
-    glass.position.set(b.x + x, 1.6, b.z + 1.54); G.add(glass);
-    const box = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.16, 0.2), lam(0xb97a4e));
-    box.position.set(b.x + x, 1.1, b.z + 1.6); G.add(box);
-    for (let i = -1; i <= 1; i++) {
-      const fl = new THREE.Mesh(new THREE.SphereGeometry(0.09, 6, 5), lam(choice([0xff8fb7, 0xffd24a, 0xc9a0ff])));
-      fl.position.set(b.x + x + i * 0.24, 1.25, b.z + 1.62); G.add(fl);
+  // vines down the posts
+  [-2.2, 2.2].forEach(s => {
+    for (let i = 0; i < 4; i++) {
+      const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.16, 5, 4), lam(0x5cba6a));
+      leaf.position.set(b.x + s + (i % 2 ? 0.22 : -0.22), 0.9 + i * 0.9, b.z + 0.1); G.add(leaf);
     }
   });
-  makeSign(G, b.x, b.z, 0xff9ec6);
+  for (let i = 0; i < 5; i++) makeFlowers(G, b.x - 1.4 + i * 0.7, b.z - 1.5, 3);
+  makeBeacon(G, 0x6ecb7d, b.x, 7.8, b.z);
+  makeFloatingLabel(G, '🌼  The Meadow', 0x6ecb7d, b.x, 7.0, b.z);
+}
+
+function buildShopFront(G, b) {
+  // bigger shop — 5.2 wide × 3.4 tall × 4.2 deep
+  const base = new THREE.Mesh(new THREE.BoxGeometry(5.2, 3.4, 4.2), lam(0xeaf4ff));
+  base.position.set(b.x, 1.7, b.z); G.add(base);
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(6.0, 0.52, 4.8), lam(0x5aa8f0));
+  roof.position.set(b.x, 3.66, b.z); G.add(roof);
+  // striped awning — wider, sits below roof overhang
+  for (let i = 0; i < 8; i++) {
+    const aw = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.36, 1.1), lam(i % 2 ? 0xffffff : 0xff7a8c));
+    aw.position.set(b.x - 2.03 + i * 0.58, 3.05, b.z + 2.26); aw.rotation.x = 0.42; G.add(aw);
+  }
+  // door
+  const door = new THREE.Mesh(new THREE.BoxGeometry(1.4, 2.4, 0.14), lam(0x3d7fc4));
+  door.position.set(b.x, 1.2, b.z + 2.11); G.add(door);
+  const dTop = new THREE.Mesh(new THREE.SphereGeometry(0.7, 8, 5, 0, Math.PI), lam(0x5aa8f0));
+  dTop.rotation.z = Math.PI; dTop.position.set(b.x, 2.4, b.z + 2.11); G.add(dTop);
+  // windows
+  [-1.65, 1.65].forEach(x => {
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.1, 0.12), lam(0xffffff));
+    frame.position.set(b.x + x, 2.2, b.z + 2.12); G.add(frame);
+    const glass = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.85, 0.13), lam(0xbfeaf5));
+    glass.position.set(b.x + x, 2.2, b.z + 2.13); G.add(glass);
+  });
+  makeBeacon(G, 0x5aa8f0, b.x, 6.2, b.z);
+  makeFloatingLabel(G, '🛍️  The Shop', 0x5aa8f0, b.x, 5.5, b.z);
+}
+
+function buildCottage(G, b) {
+  // bigger cottage — 4.8 wide × 3.2 tall × 4.2 deep
+  const base = new THREE.Mesh(new THREE.BoxGeometry(4.8, 3.2, 4.2), lam(0xfff0dc));
+  base.position.set(b.x, 1.6, b.z); G.add(base);
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(3.6, 2.6, 4), lam(0xff9ec6));
+  roof.position.set(b.x, 4.5, b.z); roof.rotation.y = Math.PI / 4; G.add(roof);
+  const chimney = new THREE.Mesh(new THREE.BoxGeometry(0.6, 1.4, 0.6), lam(0xd8a07a));
+  chimney.position.set(b.x + 1.2, 5.2, b.z - 0.4); G.add(chimney);
+  const chimTop = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.22, 0.85), lam(0xb87a5a));
+  chimTop.position.set(b.x + 1.2, 5.95, b.z - 0.4); G.add(chimTop);
+  // door
+  const door = new THREE.Mesh(new THREE.BoxGeometry(1.4, 2.4, 0.14), lam(0xb97a4e));
+  door.position.set(b.x, 1.2, b.z + 2.11); G.add(door);
+  const arch = new THREE.Mesh(new THREE.SphereGeometry(0.7, 8, 5, 0, Math.PI), lam(0xd49a66));
+  arch.rotation.z = Math.PI; arch.position.set(b.x, 2.4, b.z + 2.11); G.add(arch);
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.1, 6, 5), lam(0xffd24a));
+  knob.position.set(b.x + 0.45, 1.3, b.z + 2.18); G.add(knob);
+  // windows with flower boxes
+  [-1.55, 1.55].forEach(x => {
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.1, 0.12), lam(0xffffff));
+    frame.position.set(b.x + x, 2.3, b.z + 2.12); G.add(frame);
+    const glass = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.84, 0.13), lam(0xafe0f5));
+    glass.position.set(b.x + x, 2.3, b.z + 2.14); G.add(glass);
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.22, 0.28), lam(0xb97a4e));
+    box.position.set(b.x + x, 1.62, b.z + 2.18); G.add(box);
+    for (let i = -1; i <= 1; i++) {
+      const fl = new THREE.Mesh(new THREE.SphereGeometry(0.12, 6, 5), lam(choice([0xff8fb7, 0xffd24a, 0xc9a0ff])));
+      fl.position.set(b.x + x + i * 0.3, 1.8, b.z + 2.2); G.add(fl);
+    }
+  });
+  makeBeacon(G, 0xff9ec6, b.x, 8.2, b.z);
+  makeFloatingLabel(G, '🏠  Ranooma\'s House', 0xff9ec6, b.x, 7.5, b.z);
 }
 buildHub();
 
@@ -287,8 +334,14 @@ export function updateOverworld(dt) {
   if (S.state === 'hub') { walkWorld(dt, O.x, O.z, HUB_R); hubProximity(); }
   else if (S.state === 'shop') { walkWorld(dt, SHOP_ORIGIN.x, SHOP_ORIGIN.z, SHOP_R); updateShopProximity(); }
   else if (S.state === 'house') { const wc = S.walkCenter; if (wc) walkWorld(dt, wc.x, wc.z, S.walkR || 3.4); }
-  // ambient: spinning sign beacons + shimmering fountain
-  for (const bc of beacons) { bc.rotation.y += dt * 1.5; bc.position.y = 3.5 + Math.sin(S.animT * 2 + bc.position.x) * 0.16; }
+  // ambient: spinning beacons + floating label bob + shimmering fountain
+  for (const bc of beacons) {
+    bc.rotation.y += dt * 1.6;
+    bc.position.y = bc.userData.baseY + Math.sin(S.animT * 2.2 + bc.position.x) * 0.22;
+  }
+  for (const lb of floatingLabels) {
+    lb.position.y = lb.userData.baseY + Math.sin(S.animT * 1.4 + lb.position.x * 0.7) * 0.18;
+  }
   if (fountainWater) fountainWater.material.opacity = 1;
 }
 
