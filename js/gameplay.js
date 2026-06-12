@@ -346,6 +346,7 @@ export function setupLevel(n) {
   girlRefs.bubble.visible = S.shieldCharges > 0;
   S.spawnCd = 0;
   girl.position.set(0, 0, 0); girl.rotation.set(0, 0, 0); girl.visible = true;
+  S.walkCenter = null; S.walkR = 0; // meadow uses origin + FIELD_R (set after leaving the hub)
   S.tapTarget = null; tapMarker.visible = false;
   for (let i = 0; i < 7; i++) spawnFlower(S.cfg.rush ? 'golden' : 'normal');
   S.nextButterflyAt = S.gameT + rand(7, 12);
@@ -994,7 +995,7 @@ export function cosmetics(dt) {
       girl.rotation.y += dt * 7;
       girl.position.y = Math.abs(Math.sin(S.winT * 9)) * 0.35;
     } else girl.position.y = 0;
-  } else if (S.moving && S.state === 'playing') {
+  } else if (S.moving && (S.state === 'playing' || S.state === 'hub' || S.state === 'shop')) {
     const sw = Math.sin(S.walkT * 2.2);
     girlRefs.arms[0].rotation.x = sw * 0.75;
     if (S.swatArmT <= 0) girlRefs.arms[1].rotation.x = -0.55 + sw * 0.12;

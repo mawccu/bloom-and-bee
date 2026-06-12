@@ -11,6 +11,7 @@ import {
   tapMarker, doSwat, blowKiss,
 } from './gameplay.js';
 import { hideJoy, showFixedJoy, resetStuckInput } from './input.js';
+import { enterHub } from './hub.js';
 import { cloudLoad, cloudSave } from './cloud.js';
 
 /* ============================== save / restore ============================== */
@@ -193,7 +194,7 @@ $('malekWinOk').addEventListener('click', () => {
   $('levelScreen').classList.remove('hidden');
   S._winShopData = null;
 });
-$('playBtn').addEventListener('click', () => { initAudio(); sfx.click(); startGame(S.savedLevel, true); });
+$('playBtn').addEventListener('click', () => { initAudio(); sfx.click(); enterHub(); });
 $('newGameBtn').addEventListener('click', () => {
   sfx.click();
   S.savedLevel = 1; store.set('curlevel', 1);
@@ -201,8 +202,8 @@ $('newGameBtn').addEventListener('click', () => {
 });
 $('nextBtn').addEventListener('click', () => { initAudio(); sfx.click(); startGame(S.level + 1); });
 $('againBtn').addEventListener('click', () => { initAudio(); sfx.click(); startGame(S.level, true); });
-$('menuBtn').addEventListener('click', () => { sfx.click(); toMenu(); });
-$('quitBtn').addEventListener('click', () => { sfx.click(); toMenu(); });
+$('menuBtn').addEventListener('click', () => { sfx.click(); enterHub(); });
+$('quitBtn').addEventListener('click', () => { sfx.click(); enterHub(); });
 $('pauseBtn').addEventListener('click', () => {
   if (S.state === 'playing') { S.state = 'paused'; hideJoy(); $('pauseScreen').classList.remove('hidden'); sfx.click(); }
 });

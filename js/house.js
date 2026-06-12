@@ -7,6 +7,7 @@ import { sfx, initAudio } from './audio.js';
 import { malekSay } from './characters.js';
 import { raycaster } from './input.js';
 import { scheduleCloudSave } from './ui.js';
+import { enterHub } from './hub.js';
 
 /* ============================== house interior ============================== */
 const INT_ORIGIN = new THREE.Vector3(0, 0, 300);
@@ -184,17 +185,11 @@ export function enterHouse() {
 
 export function exitHouse() {
   S.insideHouse = false;
-  S.state = 'playing';
   $('exitHouseBtn').classList.add('hidden');
   $('interiorHint').classList.add('hidden');
-  $('hud').classList.remove('hidden');
-  $('hud2').classList.remove('hidden');
-  $('mini').classList.remove('hidden');
-  $('swatBtn').classList.remove('hidden');
-  $('sprintBtn').classList.remove('hidden'); $('stamWrap').classList.remove('hidden');
-  $('kissBtn').classList.remove('hidden');
   sfx.click();
-  malekSay('houseOut', "Back to the meadow! Don't forget to pick flowers 🌸");
+  malekSay('houseOut', "Back to the hub! Where to next? 🌸");
+  enterHub();
 }
 
 export function updateInteriorCamera() {

@@ -163,18 +163,18 @@
   #petalBal { font-size:clamp(18px,5vw,24px); font-weight:800; color:#f5a800; text-shadow:0 2px 0 #fff; }
 
   /* ---------- house / interior ---------- */
-  #housePrompt { position:fixed; bottom:calc(112px + env(safe-area-inset-bottom)); left:50%;
+  #housePrompt, #hubPrompt { position:fixed; bottom:calc(112px + env(safe-area-inset-bottom)); left:50%;
     transform:translateX(-50%); z-index:12; pointer-events:auto;
     background:rgba(255,255,255,.95); border-radius:999px; padding:12px 28px;
     font-weight:800; font-size:16px; color:#7a4f6d; font-family:inherit;
     box-shadow:0 5px 0 rgba(160,90,140,.28), 0 8px 22px rgba(160,90,140,.25);
     border:none; cursor:pointer; animation:hintBob 1.4s ease-in-out infinite; }
-  #exitHouseBtn { position:fixed; top:calc(10px + env(safe-area-inset-top)); left:10px;
+  #exitHouseBtn, #exitBuildingBtn { position:fixed; top:calc(10px + env(safe-area-inset-top)); left:10px;
     z-index:31; border:none; cursor:pointer; font-family:inherit; font-weight:800;
     font-size:15px; color:#fff; padding:10px 22px; border-radius:999px;
     background:linear-gradient(180deg,#9ad0ff 0%,#5aa8f0 100%);
     box-shadow:0 5px 0 #3d7fc4, 0 8px 20px rgba(90,168,240,.4); transition:transform .08s; }
-  #exitHouseBtn:active { transform:translateY(3px); }
+  #exitHouseBtn:active, #exitBuildingBtn:active { transform:translateY(3px); }
   #interiorHint { position:fixed; bottom:18%; left:50%; transform:translateX(-50%); z-index:31;
     background:rgba(255,255,255,.88); color:#a06a8c; padding:9px 20px; border-radius:999px;
     font-weight:700; font-size:15px; pointer-events:none;

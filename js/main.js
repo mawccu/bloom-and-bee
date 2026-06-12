@@ -13,6 +13,7 @@ import {
 } from './gameplay.js';
 import { refreshHud, setCtrl, exportSave, importSave } from './ui.js';
 import { updateInteriorCamera } from './house.js';
+import { updateOverworld, enterHub } from './hub.js';
 // input.js / ui.js / house.js are pulled in transitively for their event wiring + scene setup
 
 /* ============================== camera + main loop ============================== */
@@ -29,6 +30,7 @@ function updateCamera(dt) {
 function tick(dt) {
   S.animT += dt;
   if (S.state === 'playing') gameplay(dt);
+  else if (S.state === 'hub' || S.state === 'shop') updateOverworld(dt);
   updateMalekUlt(dt); // runs regardless of state so carry/kiss/leave survive the 'won' transition
   cosmetics(dt);
   updateParticles(dt);
@@ -65,5 +67,5 @@ window.__bb = {
   get malekCharge() { return S.malekCharge; }, set malekCharge(v) { S.malekCharge = v; },
   get ultActive() { return S.ultActive; }, get ultPhase() { return S.ultPhase; },
   get savedLevel() { return S.savedLevel; }, get profileId() { return profileId; },
-  setProfile, _doLevelWon, refreshPlayBtn, exportSave, importSave,
+  setProfile, _doLevelWon, refreshPlayBtn, exportSave, importSave, enterHub,
 };

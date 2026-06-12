@@ -31,10 +31,14 @@ function setTapTarget(e) {
   if (t <= 0) return;
   let x = raycaster.ray.origin.x + raycaster.ray.direction.x * t;
   let z = raycaster.ray.origin.z + raycaster.ray.direction.z * t;
-  const r = Math.hypot(x, z);
-  if (r > FIELD_R) { x *= FIELD_R / r; z *= FIELD_R / r; }
-  const ob = inObstacle(x, z);
-  if (ob) { const pos = { x, z }; pushOut(pos, ob); x = pos.x; z = pos.z; }
+  // clamp to the active walkable area (meadow by default; hub/shop set S.walkCenter+walkR)
+  const wc = S.walkCenter, cx = wc ? wc.x : 0, cz = wc ? wc.z : 0, R = S.walkR || FIELD_R;
+  const dx = x - cx, dz = z - cz, r = Math.hypot(dx, dz);
+  if (r > R) { x = cx + dx / r * R; z = cz + dz / r * R; }
+  if (S.state === 'playing') {
+    const ob = inObstacle(x, z);
+    if (ob) { const pos = { x, z }; pushOut(pos, ob); x = pos.x; z = pos.z; }
+  }
   S.tapTarget = { x, z };
   tapMarker.position.set(x, 0.06, z);
   tapMarker.visible = true;
@@ -47,7 +51,7 @@ renderer.domElement.addEventListener('pointerdown', e => {
     if (intDragId === null) { intDragId = e.pointerId; intDragPrevX = e.clientX; }
     return;
   }
-  if (S.state !== 'playing') return;
+  if (S.state !== 'playing' && S.state !== 'hub' && S.state !== 'shop') return;
   $('hint').style.opacity = 0;
   if (S.ctrlMode === 'tap') {
     if (tapPointerId === null) { tapPointerId = e.pointerId; setTapTarget(e); }
@@ -78,7 +82,8 @@ addEventListener('pointermove', e => {
     return;
   }
   if (e.pointerId === joyId) moveKnob(e);
-  else if (S.ctrlMode === 'tap' && e.pointerId === tapPointerId && S.state === 'playing') setTapTarget(e);
+  else if (S.ctrlMode === 'tap' && e.pointerId === tapPointerId &&
+           (S.state === 'playing' || S.state === 'hub' || S.state === 'shop')) setTapTarget(e);
 });
 const endPointer = e => {
   if (S.insideHouse) {
