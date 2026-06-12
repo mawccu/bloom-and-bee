@@ -176,6 +176,29 @@
   <button id="quitBtn" class="btn alt">🏡 Menu</button>
 </div>
 
+<!-- Achievement unlock toast -->
+<div id="achToast" class="hidden">
+  <div id="achToastIcon"></div>
+  <div id="achToastBody">
+    <div id="achToastTop">Achievement unlocked!</div>
+    <div id="achToastLabel"></div>
+    <div id="achToastDesc"></div>
+    <div id="achToastReward"></div>
+  </div>
+</div>
+
+<!-- Achievement panel (opened from board in house) -->
+<div id="achPanel" class="hidden">
+  <div id="achPanelBox">
+    <div id="achPanelHeader">
+      <span>🏆 Achievements</span>
+      <button id="achPanelClose" class="btn alt">✖ Close</button>
+    </div>
+    <div id="achPanelStats"></div>
+    <div id="achGrid"></div>
+  </div>
+</div>
+
 <script type="importmap">{ "imports": { "three": "./three.module.js" } }</script>
 <script type="module" src="js/main.js"></script>
 </body>

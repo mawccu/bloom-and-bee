@@ -10,6 +10,7 @@ import { scheduleCloudSave } from './ui.js';
 import { camFocus } from './gameplay.js';
 import { enterHub, fadeTransition } from './hub.js';
 import { initDecor, enterDecorMode, exitDecorMode, isDecorMode, handleDecorTap } from './decor.js';
+import { showAchievementsPanel, hideAchievementsPanel } from './achievements.js';
 
 /* ============================== house interior ============================== */
 const INT_ORIGIN = new THREE.Vector3(0, 0, 300);
@@ -181,6 +182,26 @@ function buildInterior() {
   const art2 = new THREE.Mesh(new THREE.BoxGeometry(0.9,0.65,0.07), bas(0xe8f5ff)); art2.position.set(3.5,2.8,-7.79); G.add(art2);
   const artStar = new THREE.Mesh(new THREE.SphereGeometry(0.1,8,6), bas(0xffd24a)); artStar.position.set(3.5,2.84,-7.75); G.add(artStar);
 
+  // ACHIEVEMENT BOARD (left wall, back-left quadrant — tap to open achievements)
+  const achBoardG = new THREE.Group();
+  achBoardG.position.set(-7.82, 1.85, -4.2);
+  achBoardG.rotation.y = -Math.PI / 2;
+  G.add(achBoardG);
+  const achFrame = new THREE.Mesh(new THREE.BoxGeometry(1.55, 1.25, 0.10), lam(0x9a6830));
+  achFrame.position.z = 0; achBoardG.add(achFrame);
+  const achPanel = new THREE.Mesh(new THREE.BoxGeometry(1.28, 0.98, 0.07), lam(0xfff8d0));
+  achPanel.position.z = 0.02; achBoardG.add(achPanel);
+  const achStar = new THREE.Mesh(new THREE.SphereGeometry(0.19, 8, 6), bas(0xffd24a));
+  achStar.position.set(0, 0.18, 0.08); achBoardG.add(achStar);
+  const medalColors = [0xd4a030, 0xb0b8c8, 0xcd7f32];
+  for (let i = -1; i <= 1; i++) {
+    const medal = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.055, 12), lam(medalColors[i + 1]));
+    medal.position.set(i * 0.36, -0.28, 0.07); medal.rotation.x = Math.PI / 2; achBoardG.add(medal);
+  }
+  const achBoardItem = { mesh: achBoardG, label: 'board', lines: ['Tap to see your achievements! 🏆'], mats: null, storeKey: null, idx: 0, isAchBoard: true };
+  achBoardG.userData.intItem = achBoardItem;
+  intItems.push(achBoardItem);
+
   // Build raycaster targets for tap detection
   intItems.forEach(it => { it.mesh.userData.intItem = it; });
   return { G, regs };
@@ -222,6 +243,7 @@ export function enterHouse() { initAudio(); sfx.click(); fadeTransition(() => en
 
 // walk to the door, fade, and step back out into the hub
 export function exitHouse() {
+  hideAchievementsPanel();
   // leave decor mode FIRST — exitDecorMode re-shows decorBtn, so hide everything after it
   if (isDecorMode()) exitDecorMode();
   $('exitHouseBtn').classList.add('hidden');
@@ -257,6 +279,12 @@ export function tapInterior(clientX, clientY) {
     if (item) break;
   }
   if (!item) return;
+  if (item.isAchBoard) {
+    showAchievementsPanel();
+    sfx.buy();
+    if (navigator.vibrate) navigator.vibrate(20);
+    return;
+  }
   // cycle state
   if (item.mats && item.storeKey) {
     item.idx = (item.idx + 1) % item.mats.length;

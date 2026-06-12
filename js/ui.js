@@ -40,7 +40,7 @@ export function importSave(code) {
    (offline / blocked) the game is unaffected and just syncs next time a call succeeds. */
 // 'bank' is the one structured value: stored as a JSON string in localStorage but carried
 // in the cloud blob (jsonb) as a real object, so it round-trips as { petals, coins } — not "[object Object]".
-const JSON_KEYS = ['bank', 'ownedItems', 'placedFurniture'];
+const JSON_KEYS = ['bank', 'ownedItems', 'placedFurniture', 'stats', 'achievements'];
 const safeParse = v => { try { return JSON.parse(v); } catch (e) { return null; } };
 function getSaveBlob() {
   const data = {};
@@ -77,6 +77,23 @@ function applySaveBlob(data) {
         const merged = { ...local, ...cloud };
         store.set(k, JSON.stringify(merged));
         S.placedFurniture = merged;
+      } else if (k === 'stats') {
+        // take max per field (never go backwards)
+        const local = (S.stats && typeof S.stats === 'object') ? S.stats : {};
+        const remote = (obj && typeof obj === 'object' && !Array.isArray(obj)) ? obj : {};
+        const merged = {};
+        new Set([...Object.keys(local), ...Object.keys(remote)]).forEach(f => {
+          merged[f] = Math.max(local[f] || 0, remote[f] || 0);
+        });
+        store.set(k, JSON.stringify(merged));
+        S.stats = merged;
+      } else if (k === 'achievements') {
+        // union: once unlocked, always unlocked
+        const localArr = Array.isArray(S.achievements) ? S.achievements : [];
+        const cloudArr = Array.isArray(obj) ? obj : [];
+        const merged = [...new Set([...localArr, ...cloudArr])];
+        store.set(k, JSON.stringify(merged));
+        S.achievements = merged;
       } else {
         store.set(k, JSON.stringify(obj));
       }

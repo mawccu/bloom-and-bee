@@ -1,4 +1,5 @@
 import { S, store } from './state.js';
+import { checkAchievements } from './achievements.js';
 
 /* ============================== item catalog ============================== */
 export const CATALOG = [
@@ -32,5 +33,6 @@ export function buy(itemId) {
   store.set('bank',       JSON.stringify({ petals: S.bank.petals, coins: S.bank.coins }));
   store.set('ownedItems', JSON.stringify(S.ownedItems));
   S.hudDirty = true;
+  checkAchievements();
   return true;
 }

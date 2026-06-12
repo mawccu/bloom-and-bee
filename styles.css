@@ -328,3 +328,54 @@
   #profileBox input:focus { border-color:#b070d0; }
   #profileBox .saveRow { display:flex; gap:8px; }
   #profileBox .saveRow .btn { flex:1; margin:0; font-size:14px; padding:10px 8px; }
+
+
+  /* ---------- achievement unlock toast ---------- */
+  #achToast { position:fixed; top:18px; left:50%; transform:translateX(-50%);
+    z-index:9998; display:flex; align-items:center; gap:12px;
+    background:linear-gradient(135deg,#fff5ff 0%,#ffeaf8 100%);
+    border:2.5px solid #e8a0d8; border-radius:20px;
+    padding:10px 18px 10px 12px;
+    box-shadow:0 8px 32px rgba(160,80,180,.35);
+    pointer-events:none; min-width:220px; max-width:90vw; }
+  #achToast.hidden { display:none !important; }
+  #achToast.ach-in  { animation:achSlideIn  .38s cubic-bezier(.18,1.45,.5,1) both; }
+  #achToast.ach-out { animation:achSlideOut .42s ease-in both; }
+  @keyframes achSlideIn  { from { opacity:0; transform:translateX(-50%) translateY(-36px); } to { opacity:1; transform:translateX(-50%) translateY(0); } }
+  @keyframes achSlideOut { from { opacity:1; transform:translateX(-50%) translateY(0); } to { opacity:0; transform:translateX(-50%) translateY(-28px); } }
+  #achToastIcon { font-size:34px; line-height:1; flex-shrink:0; }
+  #achToastBody { display:flex; flex-direction:column; gap:1px; }
+  #achToastTop { font-size:10px; font-weight:800; color:#c060b0; text-transform:uppercase; letter-spacing:.05em; }
+  #achToastLabel { font-size:15px; font-weight:800; color:#6a3a7a; line-height:1.2; }
+  #achToastDesc { font-size:11.5px; color:#9a6aaa; font-weight:600; }
+  #achToastReward { font-size:12px; font-weight:800; color:#d47a20; margin-top:2px; }
+
+  /* ---------- achievement panel ---------- */
+  #achPanel { position:fixed; inset:0; z-index:45; background:rgba(100,60,130,.62);
+    display:flex; align-items:center; justify-content:center; padding:14px; }
+  #achPanel.hidden { display:none !important; }
+  #achPanelBox { background:linear-gradient(160deg,#fff8ff 0%,#f0e0ff 100%);
+    border-radius:24px; padding:18px 16px 16px; width:min(440px,96vw);
+    max-height:88vh; display:flex; flex-direction:column; gap:10px;
+    box-shadow:0 14px 55px rgba(130,60,190,.38); }
+  #achPanelHeader { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  #achPanelHeader span { font-size:clamp(18px,5vw,24px); font-weight:800; color:#7a4f6d; }
+  #achPanelHeader .btn { margin:0; padding:6px 14px; font-size:13px; }
+  #achPanelStats { font-size:12.5px; font-weight:700; color:#9a6a9a; text-align:center;
+    background:rgba(255,255,255,.6); border-radius:12px; padding:7px 10px; line-height:1.6; }
+  #achGrid { overflow-y:auto; display:flex; flex-direction:column; gap:8px;
+    -webkit-overflow-scrolling:touch; }
+  #achGrid::-webkit-scrollbar { display:none; }
+  .ach-card { display:flex; gap:10px; align-items:flex-start;
+    background:rgba(255,255,255,.78); border-radius:14px; padding:10px 12px;
+    border:2px solid transparent; transition:border-color .15s; }
+  .ach-card.ach-done { border-color:#e8b0d8; background:rgba(255,240,255,.92); }
+  .ach-icon { font-size:28px; line-height:1; flex-shrink:0; padding-top:2px; }
+  .ach-info { display:flex; flex-direction:column; gap:3px; flex:1; min-width:0; }
+  .ach-name { font-size:14px; font-weight:800; color:#6a3a7a; }
+  .ach-desc { font-size:11.5px; color:#9a6aaa; font-weight:600; }
+  .ach-bar-wrap { height:6px; background:rgba(180,120,200,.22); border-radius:999px; overflow:hidden; margin-top:2px; }
+  .ach-bar { height:100%; background:linear-gradient(90deg,#f9a0d0,#d060c0); border-radius:999px; transition:width .4s; }
+  .ach-done .ach-bar { background:linear-gradient(90deg,#9fe6b8,#4da860); }
+  .ach-prog { font-size:10.5px; color:#b090c0; font-weight:700; }
+  .ach-reward { font-size:11px; font-weight:800; color:#d47a20; }

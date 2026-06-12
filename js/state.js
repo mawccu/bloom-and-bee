@@ -1,6 +1,6 @@
 /* ============================== profiles / storage ============================== */
 export const PROFILE_KEY = 'bloombee_profile';
-export const PROFILE_DATA_KEYS = ['best','bestlvl','curlevel','hd','snd','chime','ctrl','dress','hair','intRug','intBed','intVase','bank','ownedItems','placedFurniture'];
+export const PROFILE_DATA_KEYS = ['best','bestlvl','curlevel','hd','snd','chime','ctrl','dress','hair','intRug','intBed','intVase','bank','ownedItems','placedFurniture','stats','achievements'];
 export let profileId = localStorage.getItem(PROFILE_KEY) || '';
 const nsKey = k => profileId ? `bloombee_${profileId}_${k}` : 'bloombee_' + k;
 export const store = {
@@ -57,6 +57,12 @@ export const S = {
 
   // placed furniture (itemId → {x,z,rot} free positions; persists the house layout)
   placedFurniture: (() => { try { return JSON.parse(store.get('placedFurniture', '{}') || '{}') || {}; } catch (e) { return {}; } })(),
+
+  // lifetime stats (cumulative; drives achievement progress)
+  stats: (() => { try { return Object.assign({ levels: 0, flowersPicked: 0, beesSwatted: 0, decorations: 0 }, JSON.parse(store.get('stats', '') || 'null') || {}); } catch (e) { return { levels: 0, flowersPicked: 0, beesSwatted: 0, decorations: 0 }; } })(),
+
+  // unlocked achievement ids
+  achievements: (() => { try { return JSON.parse(store.get('achievements', '[]') || '[]') || []; } catch (e) { return []; } })(),
 
   // game flow
   state: 'menu',

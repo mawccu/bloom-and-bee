@@ -24,6 +24,7 @@ import { UPGRADES, stat } from './upgrades.js';
 import { tone, sfx } from './audio.js';
 import { inputVec, showFixedJoy, hideJoy, keys } from './input.js';
 import { drawMinimap, scheduleCloudSave } from './ui.js';
+import { trackStat } from './achievements.js';
 
 /* ============================== effect meshes ============================== */
 const guideArrow = (() => {
@@ -410,6 +411,7 @@ export function _doLevelWon(fromUlt) {
   // persistent bank: deposit the petals earned this level (separate from per-run shop petals; never resets)
   S.bank.petals += petalBonus;
   store.set('bank', JSON.stringify(S.bank));
+  trackStat('levels', 1);
   S.hudDirty = true;
   S.hearts = Math.min(MAX_HEARTS, S.hearts + 1);
   S.best = Math.max(S.best, S.score); store.set('best', S.best);
@@ -554,6 +556,7 @@ function pickFlower(f) {
   S.progress += f.rainbow ? 3 : f.golden ? (S.cfg.rush ? 1 : 2) : 1;
   S.petals += f.rainbow ? 6 : f.golden ? (S.cfg.rush ? 2 : 3) : 1;
   S.totalPicked++;
+  trackStat('flowersPicked', 1);
   S.timeLeft = Math.min(S.timeLeft + (f.rainbow ? 3 : f.golden ? 2.5 : 1.2), S.timeMax);
   const headPos = f.g.position.clone().setY(0.8);
   burst(headPos,
@@ -632,7 +635,7 @@ export function doSwat() {
     if (crowDrop()) hit++;
     else if (crow.state === 'fly') { crow.state = 'fleeUp'; hit++; }
   }
-  if (hit) { sfx.swatHit(); if (navigator.vibrate) navigator.vibrate(30); S.hudDirty = true; }
+  if (hit) { sfx.swatHit(); if (navigator.vibrate) navigator.vibrate(30); S.hudDirty = true; trackStat('beesSwatted', hit); }
 }
 
 function hitGirl(bee) {

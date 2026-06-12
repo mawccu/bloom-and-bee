@@ -8,6 +8,7 @@ import { CATALOG } from './economy.js';
 import { burst } from './particles.js';
 import { sfx } from './audio.js';
 import { scheduleCloudSave } from './ui.js';
+import { trackStat } from './achievements.js';
 import { setHouseObstacles, resolveObstacles } from './world.js';
 
 /* ============================== free-form furniture placement ==============================
@@ -295,6 +296,7 @@ function selectItem(id) {
 function dropAt(lx, lz) {
   if (!_selectedId) return;
   const id = _selectedId, e = movables[id];
+  const wasPlaced = e.placed;
   const t = curTransform(e);
   placeFurniture(id, lx, lz, t.rot || 0);
   burst(new THREE.Vector3(INT_OX + clamp(lx, -CLAMP, CLAMP), 0.5, INT_OZ + clamp(lz, -CLAMP, CLAMP)),
@@ -305,6 +307,7 @@ function dropAt(lx, lz) {
   _selectedId = null;
   malekSay(null, choice(e.lines || PLACE_LINES));
   _rebuildPanel();
+  if (!wasPlaced) trackStat('decorations', 1);
 }
 
 function rotateSelected() {
