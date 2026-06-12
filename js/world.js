@@ -57,19 +57,22 @@ export function resolveObstacles(pos, list) {
   }
 }
 
-scene.add(new THREE.Mesh(new THREE.CircleGeometry(130, 48), lam(0x93d483)).rotateX(-Math.PI / 2));
+const bigGround = new THREE.Mesh(new THREE.CircleGeometry(130, 48), lam(0x93d483));
+bigGround.rotateX(-Math.PI / 2); bigGround.receiveShadow = true;
+scene.add(bigGround);
 const playDisc = new THREE.Mesh(new THREE.CircleGeometry(FIELD_R + 2.5, 64), lam(0xa9e394));
-playDisc.rotation.x = -Math.PI / 2; playDisc.position.y = 0.01;
+playDisc.rotation.x = -Math.PI / 2; playDisc.position.y = 0.01; playDisc.receiveShadow = true;
 scene.add(playDisc);
 
 // ponds + lily pads
+const waterMat = new THREE.MeshStandardMaterial({ color: 0x5ac9e8, roughness: 0.06, metalness: 0.28 });
 for (const o of OBSTACLES) {
   if (!o.pond) continue;
   const rim = new THREE.Mesh(new THREE.CircleGeometry(1, 32), lam(0xd8c8a0));
   rim.scale.set(o.rx + 0.7, o.rz + 0.6, 1);
   rim.rotation.x = -Math.PI / 2; rim.position.set(o.x, 0.02, o.z);
-  scene.add(rim);
-  const water = new THREE.Mesh(new THREE.CircleGeometry(1, 32), lam(0x8fd4e8));
+  rim.receiveShadow = true; scene.add(rim);
+  const water = new THREE.Mesh(new THREE.CircleGeometry(1, 32), waterMat);
   water.scale.set(o.rx, o.rz, 1);
   water.rotation.x = -Math.PI / 2; water.position.set(o.x, 0.03, o.z);
   scene.add(water);

@@ -114,6 +114,7 @@ export const girlRefs = {};
   girl.add(bubble);
   girlRefs.bubble = bubble;
 
+  girl.traverse(c => { if (c.isMesh) c.castShadow = true; });
   scene.add(girl);
 }
 export const girlShadow = makeBlobShadow(0.55);
@@ -189,6 +190,7 @@ export const malekChar = (() => {
   const glow = new THREE.Mesh(new THREE.SphereGeometry(1.35, 16, 12),
     bas(0xffd76a, { transparent: true, opacity: 0.1, fog: false, blending: THREE.AdditiveBlending, depthWrite: false }));
   glow.position.y = 1.4; g.add(glow);
+  g.traverse(c => { if (c.isMesh) c.castShadow = true; });
   g.visible = false;
   scene.add(g);
   return { g, aura, glow, arms: armRefs, legs: legRefs, shadow: makeBlobShadow(0.62), landX: 0, landZ: 0 };

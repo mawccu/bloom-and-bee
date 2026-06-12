@@ -5,6 +5,10 @@ import { S } from './state.js';
 export const renderer = new THREE.WebGLRenderer({ antialias: true });
 export function applyQuality() { renderer.setPixelRatio(S.hdOn ? Math.min(devicePixelRatio, 2) : 1); renderer.setSize(innerWidth, innerHeight); }
 applyQuality();
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.08;
 renderer.domElement.className = 'game3d';
 document.body.appendChild(renderer.domElement);
 
@@ -40,10 +44,20 @@ function fitCamera() {
 addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); fitCamera(); });
 fitCamera();
 
-export const hemiLight = new THREE.HemisphereLight(0xd8edff, 0xb2dba0, 1.3);
+export const hemiLight = new THREE.HemisphereLight(0xd8edff, 0xb2dba0, 1.6);
 scene.add(hemiLight);
-const sunLight = new THREE.DirectionalLight(0xfff2d8, 1.0);
-sunLight.position.set(-12, 20, 8);
+export const sunLight = new THREE.DirectionalLight(0xfff8e8, 2.2);
+sunLight.position.set(-14, 26, 10);
+sunLight.castShadow = true;
+sunLight.shadow.mapSize.set(1024, 1024);
+sunLight.shadow.camera.near = 1;
+sunLight.shadow.camera.far = 130;
+sunLight.shadow.camera.left   = -55;
+sunLight.shadow.camera.right  =  55;
+sunLight.shadow.camera.top    =  55;
+sunLight.shadow.camera.bottom = -55;
+sunLight.shadow.bias   = -0.0008;
+sunLight.shadow.radius = 2.5;
 scene.add(sunLight);
 paintSky(SKIES.noon);
 

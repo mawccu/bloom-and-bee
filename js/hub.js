@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { lam, bas, $, rand, choice, lerpAngle } from './utils.js';
+import { lam, bas, std, $, rand, choice, lerpAngle } from './utils.js';
 import { S } from './state.js';
 import { scene, SKIES, paintSky } from './engine.js';
 import { girl, girlRefs } from './characters.js';
@@ -140,25 +140,38 @@ const beacons = [];
 let fountainWater = null;
 function buildHub() {
   const G = new THREE.Group(); scene.add(G);
-  G.add(new THREE.HemisphereLight(0xeaf6ff, 0xbfe6a8, 1.25));
-  const sun = new THREE.DirectionalLight(0xfff2d8, 0.7); sun.position.set(O.x - 10, 18, O.z + 8); G.add(sun);
+  G.add(new THREE.HemisphereLight(0xeaf6ff, 0xbfe6a8, 1.5));
+  const sun = new THREE.DirectionalLight(0xfff8e8, 1.6);
+  sun.position.set(O.x - 12, 22, O.z + 10);
+  sun.target.position.set(O.x, 0, O.z);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(1024, 1024);
+  sun.shadow.camera.near = 1; sun.shadow.camera.far = 80;
+  sun.shadow.camera.left = -28; sun.shadow.camera.right = 28;
+  sun.shadow.camera.top  =  28; sun.shadow.camera.bottom = -28;
+  sun.shadow.bias = -0.001; sun.shadow.radius = 2;
+  G.add(sun); G.add(sun.target);
 
   // layered ground: big grass disc + a couple of softer patches
   const ground = new THREE.Mesh(new THREE.CircleGeometry(HUB_R + 9, 56), lam(0x93d483));
-  ground.rotation.x = -Math.PI / 2; ground.position.set(O.x, 0, O.z); G.add(ground);
+  ground.rotation.x = -Math.PI / 2; ground.position.set(O.x, 0, O.z);
+  ground.receiveShadow = true; G.add(ground);
   const inner = new THREE.Mesh(new THREE.CircleGeometry(HUB_R + 1, 48), lam(0xa6e394));
-  inner.rotation.x = -Math.PI / 2; inner.position.set(O.x, 0.01, O.z); G.add(inner);
+  inner.rotation.x = -Math.PI / 2; inner.position.set(O.x, 0.01, O.z);
+  inner.receiveShadow = true; G.add(inner);
   [[O.x - 7, O.z + 5, 0x9bdc86], [O.x + 8, O.z + 4, 0x8fd47e], [O.x + 2, O.z - 4, 0xa9e89a]].forEach(([px, pz, c]) => {
     const patch = new THREE.Mesh(new THREE.CircleGeometry(rand(3, 4.5), 20), lam(c));
-    patch.rotation.x = -Math.PI / 2; patch.position.set(px, 0.015, pz); G.add(patch);
+    patch.rotation.x = -Math.PI / 2; patch.position.set(px, 0.015, pz);
+    patch.receiveShadow = true; G.add(patch);
   });
 
   // central plaza + fountain
   const plaza = new THREE.Mesh(new THREE.CircleGeometry(4.2, 36), lam(0xe9d9b4));
-  plaza.rotation.x = -Math.PI / 2; plaza.position.set(O.x, 0.02, O.z); G.add(plaza);
+  plaza.rotation.x = -Math.PI / 2; plaza.position.set(O.x, 0.02, O.z);
+  plaza.receiveShadow = true; G.add(plaza);
   const rim = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.6, 0.55, 20), lam(0xcdd3da));
-  rim.position.set(O.x, 0.27, O.z); G.add(rim);
-  fountainWater = new THREE.Mesh(new THREE.CircleGeometry(1.3, 20), lam(0x8fd4e8));
+  rim.position.set(O.x, 0.27, O.z); rim.castShadow = true; rim.receiveShadow = true; G.add(rim);
+  fountainWater = new THREE.Mesh(new THREE.CircleGeometry(1.3, 20), new THREE.MeshStandardMaterial({ color: 0x5ac9e8, roughness: 0.05, metalness: 0.3 }));
   fountainWater.rotation.x = -Math.PI / 2; fountainWater.position.set(O.x, 0.5, O.z); G.add(fountainWater);
   const spout = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.18, 1.1, 8), lam(0xcdd3da));
   spout.position.set(O.x, 1.0, O.z); G.add(spout);
@@ -201,6 +214,7 @@ function buildHub() {
   buildMeadowGate(G, BUILDINGS[0]);
   buildShopFront(G, BUILDINGS[1]);
   buildCottage(G, BUILDINGS[2]);
+  G.traverse(c => { if (c.isMesh) c.castShadow = true; });
 }
 
 /* ---------- the three entrance buildings ---------- */
@@ -249,7 +263,7 @@ function buildShopFront(G, b) {
   [-1.65, 1.65].forEach(x => {
     const frame = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.1, 0.12), lam(0xffffff));
     frame.position.set(b.x + x, 2.2, b.z + 2.12); G.add(frame);
-    const glass = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.85, 0.13), lam(0xbfeaf5));
+    const glass = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.85, 0.13), std(0xaeeeff, 0.04, 0.15, { transparent: true, opacity: 0.7 }));
     glass.position.set(b.x + x, 2.2, b.z + 2.13); G.add(glass);
   });
   makeBeacon(G, 0x5aa8f0, b.x, 6.2, b.z);
@@ -274,7 +288,7 @@ function buildCottage(G, b) {
   [-1.55, 1.55].forEach(x => {
     const frame = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.1, 0.12), lam(0xffffff));
     frame.position.set(b.x + x, 2.3, b.z + 2.12); G.add(frame);
-    const glass = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.84, 0.13), lam(0xafe0f5));
+    const glass = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.84, 0.13), std(0xaeeeff, 0.04, 0.15, { transparent: true, opacity: 0.7 }));
     glass.position.set(b.x + x, 2.3, b.z + 2.14); G.add(glass);
     const box = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.22, 0.28), lam(0xb97a4e));
     box.position.set(b.x + x, 1.62, b.z + 2.18); G.add(box);
