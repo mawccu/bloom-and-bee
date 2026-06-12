@@ -55,7 +55,7 @@ export const S = {
   // owned items (purchased from the shop; stored as JSON array)
   ownedItems: (() => { try { return JSON.parse(store.get('ownedItems', '[]') || '[]') || []; } catch (e) { return []; } })(),
 
-  // placed furniture (slot → itemId map; persists house layout)
+  // placed furniture (itemId → {x,z,rot} free positions; persists the house layout)
   placedFurniture: (() => { try { return JSON.parse(store.get('placedFurniture', '{}') || '{}') || {}; } catch (e) { return {}; } })(),
 
   // game flow

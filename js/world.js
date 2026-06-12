@@ -35,11 +35,16 @@ export const SHOP_OBSTACLES = [
   { x: -308.35, z: 218.5, rx: 0.9, rz: 4.7 },  // left shelf unit
   { x: -291.65, z: 218.5, rx: 0.9, rz: 4.7 },  // right shelf unit
 ];
-export const HOUSE_OBSTACLES = [
+// House furniture is now free-movable (decor.js), so its collision footprints are
+// rebuilt from the live furniture transforms whenever something is moved. This list
+// is reassigned via setHouseObstacles(); the defaults below cover the first frame
+// before decor.js initialises.
+export let HOUSE_OBSTACLES = [
   { x:  4.8, z: 295.7, rx: 1.6, rz: 2.4 },  // bed (back-right corner)
   { x: -4.8, z: 295.4, rx: 1.7, rz: 1.4 },  // desk + chair (back-left corner)
   { x: -6.4, z: 301.8, rx: 1.2, rz: 0.7 },  // bookshelf (left wall)
 ];
+export function setHouseObstacles(list) { HOUSE_OBSTACLES = list; }
 
 // push pos out of every furniture ellipse it overlaps (a couple of passes so
 // she resolves cleanly even when wedged between two pieces)

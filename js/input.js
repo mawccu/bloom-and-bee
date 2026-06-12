@@ -12,7 +12,7 @@ import { tapInterior } from './house.js';
 const joyEl = $('joy'), knobEl = $('joyKnob');
 let joyId = null, joyOX = 0, joyOY = 0, joyVX = 0, joyVY = 0;
 let tapPointerId = null;
-let intDragId = null, intDragPrevX = 0;
+let intDragId = null, intDragPrevX = 0, intDragStartX = 0, intDragStartY = 0, intDragMoved = false;
 const JOY_R = 56;
 export const raycaster = new THREE.Raycaster();
 
@@ -49,10 +49,13 @@ function setTapTarget(e) {
 }
 
 renderer.domElement.addEventListener('pointerdown', e => {
-  // Interior mode: drag to orbit, tap to interact
+  // Interior mode: drag to orbit, tap (no drag) to interact
   if (S.insideHouse) {
     initAudio();
-    if (intDragId === null) { intDragId = e.pointerId; intDragPrevX = e.clientX; }
+    if (intDragId === null) {
+      intDragId = e.pointerId; intDragPrevX = e.clientX;
+      intDragStartX = e.clientX; intDragStartY = e.clientY; intDragMoved = false;
+    }
     return;
   }
   if (S.state !== 'playing' && S.state !== 'hub' && S.state !== 'shop' && S.state !== 'house') return;
@@ -82,7 +85,10 @@ function moveKnob(e) {
 }
 addEventListener('pointermove', e => {
   if (S.insideHouse) {
-    if (e.pointerId === intDragId) { S.intYaw -= (e.clientX - intDragPrevX) * 0.008; intDragPrevX = e.clientX; }
+    if (e.pointerId === intDragId) {
+      S.intYaw -= (e.clientX - intDragPrevX) * 0.008; intDragPrevX = e.clientX;
+      if (Math.hypot(e.clientX - intDragStartX, e.clientY - intDragStartY) > 10) intDragMoved = true;
+    }
     return;
   }
   if (e.pointerId === joyId) moveKnob(e);
@@ -92,9 +98,9 @@ addEventListener('pointermove', e => {
 const endPointer = e => {
   if (S.insideHouse) {
     if (e.pointerId === intDragId) {
-      // if barely moved, treat as a tap for interior item
+      const wasTap = !intDragMoved;   // a drag was an orbit, not an item tap
       intDragId = null;
-      tapInterior(e.clientX, e.clientY);
+      if (wasTap) tapInterior(e.clientX, e.clientY);
     }
     return;
   }

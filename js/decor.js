@@ -1,35 +1,54 @@
 import * as THREE from 'three';
-import { lam, bas, $ } from './utils.js';
+import { lam, bas, choice, clamp, $ } from './utils.js';
 import { S, store } from './state.js';
-import { scene, camera } from './engine.js';
+import { camera } from './engine.js';
 import { raycaster } from './input.js';
+import { girl, malekSay } from './characters.js';
 import { CATALOG } from './economy.js';
 import { burst } from './particles.js';
 import { sfx } from './audio.js';
-import { malekSay } from './characters.js';
 import { scheduleCloudSave } from './ui.js';
+import { setHouseObstacles, resolveObstacles } from './world.js';
 
-/* ============================== slot grid ==============================
-   8 floor positions inside the house (INT_ORIGIN = 0,0,300), laid out as an
-   even 4×2 grid across the open central/front floor (clear of the built-in
-   bed/desk/bookshelf). World coords = (INT_OX + slot.lx, 0, INT_OZ + slot.lz). */
+/* ============================== free-form furniture placement ==============================
+   Every piece of furniture/decor is a movable item. The player picks one up (tap it in 3-D,
+   or tap its card in the panel) then taps anywhere on the floor to drop it — free position,
+   no slots/dots. Positions are LOCAL to the interior origin (INT_ORIGIN = 0,0,300) and are
+   persisted per item in S.placedFurniture = { itemId: {x, z, rot} } so they cloud-sync and
+   restore on reload. Collision footprints are rebuilt from the live transforms on every move. */
 const INT_OX = 0, INT_OZ = 300;
+const CLAMP = 6.4;            // keep furniture centres inside the walls
+const LIFT  = 0.5;           // how far a picked-up item floats while "held"
+const ROT_STEP = Math.PI / 4; // 45° per rotate tap
 
-const SLOTS = [
-  { id: 'g0', lx: -3.6, lz: 1.0 },
-  { id: 'g1', lx: -1.2, lz: 1.0 },
-  { id: 'g2', lx:  1.2, lz: 1.0 },
-  { id: 'g3', lx:  3.6, lz: 1.0 },
-  { id: 'g4', lx: -3.6, lz: 4.0 },
-  { id: 'g5', lx: -1.2, lz: 4.0 },
-  { id: 'g6', lx:  1.2, lz: 4.0 },
-  { id: 'g7', lx:  3.6, lz: 4.0 },
-];
+// ellipse footprint half-extents (local, un-rotated) + whether it blocks walking
+const FOOT = {
+  bed:          { rx: 1.45, rz: 2.15, collide: true  },
+  desk:         { rx: 1.6,  rz: 1.3,  collide: true  },
+  shelf:        { rx: 1.15, rz: 0.6,  collide: true  },
+  lamp:         { rx: 0.5,  rz: 0.5,  collide: true  },
+  rug:          { rx: 3.1,  rz: 2.3,  collide: false },
+  bookshelf:    { rx: 0.95, rz: 0.45, collide: true  },
+  mirror_heart: { rx: 0.7,  rz: 0.45, collide: true  },
+  plant_bonsai: { rx: 0.5,  rz: 0.5,  collide: true  },
+  lamp_gold:    { rx: 0.45, rz: 0.45, collide: true  },
+  vase_flowers: { rx: 0.4,  rz: 0.4,  collide: false },
+  rug_pink:     { rx: 1.7,  rz: 1.3,  collide: false },
+  rug_purple:   { rx: 1.7,  rz: 1.3,  collide: false },
+  teapot_flower:{ rx: 0.4,  rz: 0.4,  collide: false },
+  poster_stars: { rx: 0.5,  rz: 0.45, collide: false },
+  candle_rose:  { rx: 0.3,  rz: 0.3,  collide: false },
+  cat_plush:    { rx: 0.35, rz: 0.35, collide: false },
+  clock_wall:   { rx: 0.3,  rz: 0.3,  collide: false },
+};
+const DEFAULT_FOOT = { rx: 0.5, rz: 0.5, collide: false };
+const PLACE_LINES = ["Looking amazing! 🛋️✨", "Perfect spot 🥰", "Our cosy little home 💕", "Love what you did there! ✨"];
 
-const slotMarkers  = {};   // slotId → THREE.Mesh
-const placedMeshes = {};   // slotId → THREE.Group
-let _decorMode     = false;
-let _selectedId    = null;
+let interiorGroup = null;
+const movables = {};   // id -> { id, kind, group, foot, label, lines, def:{x,z,rot}, placed }
+let _decorMode  = false;
+let _selectedId = null;   // currently picked-up item
+let _ring = null;          // glowing ring under the held item
 
 /* ============================== mesh builders ============================== */
 function buildDecorMesh(itemId) {
@@ -181,207 +200,267 @@ function buildDecorMesh(itemId) {
   return G;
 }
 
-/* ============================== slot markers ============================== */
-function makeSlotMarker(slotId, lx, lz) {
-  const geo = new THREE.CylinderGeometry(0.65, 0.65, 0.045, 18);
-  const mat = bas(0xffd24a, { transparent: true, opacity: 0.55 });
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.position.set(INT_OX + lx, 0.03, INT_OZ + lz);
-  mesh.userData.slotId = slotId;
-  mesh.visible = false;
-  scene.add(mesh);
-  slotMarkers[slotId] = mesh;
+/* ============================== transforms / persistence ============================== */
+function curTransform(e) {
+  const t = S.placedFurniture[e.id];
+  return (t && typeof t === 'object' && 'x' in t) ? t : e.def;
 }
-
-/* ============================== spawn / despawn ============================== */
-function spawnMesh(slotId, itemId) {
-  despawnMesh(slotId);
-  const slot = SLOTS.find(s => s.id === slotId);
-  if (!slot) return;
-  const G = buildDecorMesh(itemId);
-  G.position.set(INT_OX + slot.lx, 0, INT_OZ + slot.lz);
-  G.userData.decorSlotId = slotId;
-  G.traverse(c => { c.userData.decorSlotId = slotId; });
-  scene.add(G);
-  placedMeshes[slotId] = G;
-}
-
-function despawnMesh(slotId) {
-  if (placedMeshes[slotId]) { scene.remove(placedMeshes[slotId]); delete placedMeshes[slotId]; }
-}
-
-/* ============================== init (called from house.js) ============================== */
-export function initDecor() {
-  SLOTS.forEach(s => makeSlotMarker(s.id, s.lx, s.lz));
-  // drop saved placements that point at retired slot ids (old random layout)
-  Object.keys(S.placedFurniture).forEach(slotId => {
-    if (!SLOTS.some(s => s.id === slotId)) delete S.placedFurniture[slotId];
-  });
-  Object.entries(S.placedFurniture).forEach(([slotId, itemId]) => spawnMesh(slotId, itemId));
-}
-
-/* ============================== persist ============================== */
 function savePlaced() {
   store.set('placedFurniture', JSON.stringify(S.placedFurniture));
   scheduleCloudSave();
 }
 
-export function placeItem(slotId, itemId) {
-  S.placedFurniture[slotId] = itemId;
+// rebuild the live house collision footprints from every placed, colliding item
+function rebuildCollision() {
+  const list = [];
+  for (const id in movables) {
+    const e = movables[id];
+    if (!e.placed || !e.foot.collide) continue;
+    const t = curTransform(e);
+    const c = Math.abs(Math.cos(t.rot || 0)), s = Math.abs(Math.sin(t.rot || 0));
+    const rx = Math.hypot(e.foot.rx * c, e.foot.rz * s);   // AABB of the rotated ellipse
+    const rz = Math.hypot(e.foot.rx * s, e.foot.rz * c);
+    list.push({ x: INT_OX + t.x, z: INT_OZ + t.z, rx, rz });
+  }
+  setHouseObstacles(list);
+  if (girl) resolveObstacles(girl.position, list);   // never trap her inside a moved piece
+}
+
+/* ============================== spawn ============================== */
+function spawnCatalog(id) {
+  if (movables[id]) return movables[id];
+  if (!CATALOG.some(i => i.id === id)) return null;
+  const g = buildDecorMesh(id);
+  g.userData.movableId = id;
+  g.traverse(c => { c.userData.movableId = id; });
+  interiorGroup.add(g);
+  const e = { id, kind: 'catalog', group: g, foot: FOOT[id] || DEFAULT_FOOT, label: null, lines: null, def: { x: 0, z: 2.5, rot: 0 }, placed: false };
+  movables[id] = e;
+  return e;
+}
+
+/* ============================== public placement API (UI + tests) ============================== */
+export function placeFurniture(id, lx, lz, rot = 0) {
+  const e = movables[id] || spawnCatalog(id);
+  if (!e) return;
+  lx = clamp(lx, -CLAMP, CLAMP); lz = clamp(lz, -CLAMP, CLAMP);
+  e.placed = true;
+  S.placedFurniture[id] = { x: lx, z: lz, rot };
+  e.group.position.set(lx, 0, lz);
+  e.group.rotation.y = rot;
   savePlaced();
-  spawnMesh(slotId, itemId);
-  _refreshMarkers();
+  rebuildCollision();
 }
-
-export function removeItem(slotId) {
-  delete S.placedFurniture[slotId];
+export function getPlacement(id) {
+  const e = movables[id];
+  if (!e || !e.placed) return null;
+  const t = curTransform(e);
+  return { x: t.x, z: t.z, rot: t.rot || 0 };
+}
+function removeItem(id) {
+  const e = movables[id];
+  if (!e) return;
+  delete S.placedFurniture[id];
+  if (e.kind === 'catalog') { interiorGroup.remove(e.group); delete movables[id]; }
+  else e.placed = false;
   savePlaced();
-  despawnMesh(slotId);
-  _refreshMarkers();
+  rebuildCollision();
 }
 
-/* ============================== decor mode ============================== */
-export function isDecorMode() { return _decorMode; }
+/* ============================== selection ring ============================== */
+function ensureRing() {
+  if (_ring || !interiorGroup) return;
+  _ring = new THREE.Mesh(new THREE.RingGeometry(0.75, 1.05, 28),
+    bas(0xffd24a, { transparent: true, opacity: 0.72, side: THREE.DoubleSide }));
+  _ring.rotation.x = -Math.PI / 2; _ring.position.y = 0.05; _ring.visible = false;
+  interiorGroup.add(_ring);
+}
+function showRing(e) { ensureRing(); const t = curTransform(e); _ring.position.set(t.x, 0.05, t.z); _ring.visible = true; }
+function hideRing() { if (_ring) _ring.visible = false; }
 
-function _refreshMarkers() {
-  SLOTS.forEach(s => {
-    const m = slotMarkers[s.id];
-    if (!m) return;
-    const occ = !!S.placedFurniture[s.id];
-    m.material.color.setHex(occ ? 0xff9ec6 : 0xffd24a);
-    m.material.opacity = occ ? 0.30 : 0.55;
-    m.visible = _decorMode;
-  });
+/* ============================== pick up / drop / rotate ============================== */
+function selectItem(id) {
+  const e = movables[id];
+  if (!e) return;
+  if (_selectedId && _selectedId !== id && movables[_selectedId]) movables[_selectedId].group.position.y = 0;
+  _selectedId = id;
+  e.group.position.y = LIFT;
+  showRing(e);
+  $('decorRotateBtn').classList.remove('hidden');
+  _rebuildPanel();
+  sfx.click();
+  malekSay(null, "Got it! Tap the floor to set it down, 🔄 to rotate ✨");
 }
 
+function dropAt(lx, lz) {
+  if (!_selectedId) return;
+  const id = _selectedId, e = movables[id];
+  const t = curTransform(e);
+  placeFurniture(id, lx, lz, t.rot || 0);
+  burst(new THREE.Vector3(INT_OX + clamp(lx, -CLAMP, CLAMP), 0.5, INT_OZ + clamp(lz, -CLAMP, CLAMP)),
+    [0xff9ec6, 0xffffff, 0xffd24a], 10, 1.5, 1.2, 0.7);
+  sfx.buy();
+  hideRing();
+  $('decorRotateBtn').classList.add('hidden');
+  _selectedId = null;
+  malekSay(null, choice(e.lines || PLACE_LINES));
+  _rebuildPanel();
+}
+
+function rotateSelected() {
+  if (!_selectedId) return;
+  const e = movables[_selectedId];
+  const t = curTransform(e);
+  const rot = ((t.rot || 0) + ROT_STEP) % (Math.PI * 2);
+  S.placedFurniture[_selectedId] = { x: t.x, z: t.z, rot };
+  e.group.rotation.y = rot;
+  savePlaced();
+  rebuildCollision();
+  sfx.click();
+}
+
+/* ============================== tap handler (from house.js tapInterior) ============================== */
+function rayFloorPoint(cx, cy) {
+  raycaster.setFromCamera({ x: (cx / innerWidth) * 2 - 1, y: -(cy / innerHeight) * 2 + 1 }, camera);
+  const o = raycaster.ray.origin, d = raycaster.ray.direction;
+  if (Math.abs(d.y) < 1e-6) return null;
+  const t = -o.y / d.y;
+  if (t <= 0) return null;
+  return { x: o.x + d.x * t, z: o.z + d.z * t };
+}
+function pickMovable(cx, cy) {
+  raycaster.setFromCamera({ x: (cx / innerWidth) * 2 - 1, y: -(cy / innerHeight) * 2 + 1 }, camera);
+  const meshes = [];
+  for (const id in movables) {
+    const e = movables[id];
+    if (e.placed) e.group.traverse(c => { if (c.isMesh) meshes.push(c); });
+  }
+  const hits = raycaster.intersectObjects(meshes, false);
+  for (const h of hits) {
+    let o = h.object;
+    while (o) { if (o.userData.movableId) return o.userData.movableId; o = o.parent; }
+  }
+  return null;
+}
+export function handleDecorTap(clientX, clientY) {
+  if (_selectedId) {
+    const p = rayFloorPoint(clientX, clientY);
+    if (p) dropAt(p.x - INT_OX, p.z - INT_OZ);
+    return;
+  }
+  const id = pickMovable(clientX, clientY);
+  if (id) selectItem(id);
+  else malekSay(null, "Tap a piece of furniture to pick it up 👆");
+}
+
+/* ============================== panel (owned catalog items) ============================== */
 function _rebuildPanel() {
   const panel = $('decorPanel');
   panel.innerHTML = '';
-
-  const ownedCatalog = CATALOG.filter(it => S.ownedItems.includes(it.id));
-  if (!ownedCatalog.length) {
+  const owned = CATALOG.filter(it => S.ownedItems.includes(it.id));
+  if (!owned.length) {
     const msg = document.createElement('div');
     msg.className = 'decorEmpty';
     msg.textContent = 'Buy items in the shop first! 🛍️';
     panel.appendChild(msg);
     return;
   }
-
-  ownedCatalog.forEach(item => {
-    const placedEntry = Object.entries(S.placedFurniture).find(([, v]) => v === item.id);
-    const isSelected  = item.id === _selectedId;
+  owned.forEach(item => {
+    const placed = !!(movables[item.id] && movables[item.id].placed);
+    const selected = item.id === _selectedId;
     const card = document.createElement('button');
-    card.className = 'decorCard' + (placedEntry ? ' placed' : '') + (isSelected ? ' selected' : '');
+    card.className = 'decorCard' + (placed ? ' placed' : '') + (selected ? ' selected' : '');
     card.innerHTML =
       `<span class="dc-em">${item.emoji}</span>` +
       `<span class="dc-nm">${item.name}</span>` +
-      (placedEntry ? `<span class="dc-tag">placed</span>` : '');
-
+      (placed ? `<span class="dc-tag">${selected ? 'holding' : 'placed'}</span>` : '');
     card.addEventListener('pointerdown', e => {
-      e.preventDefault();
-      sfx.click();
-      if (isSelected && placedEntry) {
-        // second tap on an already-placed selected item → remove it
-        removeItem(placedEntry[0]);
-        _selectedId = null;
+      e.preventDefault(); sfx.click();
+      const isPlaced = !!(movables[item.id] && movables[item.id].placed);
+      if (selected && isPlaced) {
+        removeItem(item.id);
+        _selectedId = null; hideRing();
+        $('decorRotateBtn').classList.add('hidden');
         _rebuildPanel();
         malekSay(null, "Stored away! 📦");
-      } else {
-        _selectedId = item.id;
-        _rebuildPanel();
-        malekSay(null, placedEntry
-          ? "Tap a glowing spot to move it, or tap here again to remove 🗑️"
-          : "Now tap a glowing spot on the floor! ✨");
+        return;
       }
+      if (!isPlaced) placeFurniture(item.id, 0, 2.5, 0);   // bring it into the room first
+      selectItem(item.id);
     });
     panel.appendChild(card);
   });
 }
 
+/* ============================== decor mode ============================== */
+export function isDecorMode() { return _decorMode; }
+
 export function enterDecorMode() {
-  _decorMode  = true;
-  _selectedId = null;
-  S.insideHouse = true;   // switch input to orbit+tap mode (updateInteriorCamera takes over)
-  _refreshMarkers();
+  _decorMode = true; _selectedId = null;
+  S.insideHouse = true;   // orbit + tap mode (updateInteriorCamera takes over)
   _rebuildPanel();
   $('decorPanel').classList.remove('hidden');
   $('decorDoneBtn').classList.remove('hidden');
   $('decorBtn').classList.add('hidden');
-  malekSay('decor', "Decor mode! 🛋️ Pick an item below, then tap a glowing floor spot ✨");
+  $('decorRotateBtn').classList.add('hidden');
+  malekSay('decor', "Decor mode! 🛋️ Tap any furniture to pick it up, then tap the floor to place it anywhere ✨");
 }
 
 export function exitDecorMode() {
-  _decorMode  = false;
-  _selectedId = null;
+  if (_selectedId && movables[_selectedId]) movables[_selectedId].group.position.y = 0;
+  _selectedId = null; hideRing();
+  _decorMode = false;
   S.insideHouse = false;  // back to walk mode
-  _refreshMarkers();      // hides all markers
   $('decorPanel').classList.add('hidden');
   $('decorDoneBtn').classList.add('hidden');
+  $('decorRotateBtn').classList.add('hidden');
   $('decorBtn').classList.remove('hidden');
 }
 
-/* ============================== tap handler (called from house.js tapInterior) ============================== */
-export function handleDecorTap(clientX, clientY) {
-  raycaster.setFromCamera(
-    { x: (clientX / innerWidth) * 2 - 1, y: -(clientY / innerHeight) * 2 + 1 },
-    camera
-  );
-
-  // collect raycast targets: visible slot markers + all placed mesh children
-  const targets = Object.values(slotMarkers).filter(m => m.visible);
-  Object.values(placedMeshes).forEach(g => g.traverse(c => { if (c.isMesh) targets.push(c); }));
-
-  const hits = raycaster.intersectObjects(targets, false);
-  if (!hits.length) return;
-
-  // hit a slot marker?
-  for (const h of hits) {
-    const slotId = h.object.userData.slotId;
-    if (!slotId) continue;
-    if (!_selectedId) {
-      malekSay(null, "Pick an item from the panel below first! 👇");
-      sfx.click();
-      return;
+/* ============================== init (called from house.js) ============================== */
+// migrate the old slot→itemId save format to the new itemId→{x,z,rot} format
+const OLD_SLOTS = { g0:[-3.6,1.0], g1:[-1.2,1.0], g2:[1.2,1.0], g3:[3.6,1.0], g4:[-3.6,4.0], g5:[-1.2,4.0], g6:[1.2,4.0], g7:[3.6,4.0] };
+function migrate() {
+  const pf = S.placedFurniture; let changed = false;
+  for (const k of Object.keys(pf)) {
+    const v = pf[k];
+    if (typeof v === 'string') {                 // old: k=slotId, v=itemId
+      const s = OLD_SLOTS[k];
+      pf[v] = { x: s ? s[0] : 0, z: s ? s[1] : 2.5, rot: 0 };
+      delete pf[k]; changed = true;
+    } else if (!v || typeof v !== 'object' || !('x' in v)) {
+      delete pf[k]; changed = true;              // unknown shape — drop it
     }
-    // move from any current slot, then place here
-    const cur = Object.entries(S.placedFurniture).find(([, v]) => v === _selectedId);
-    if (cur) removeItem(cur[0]);
-    placeItem(slotId, _selectedId);
-    const slot = SLOTS.find(s => s.id === slotId);
-    burst(new THREE.Vector3(INT_OX + slot.lx, 0.5, INT_OZ + slot.lz), [0xff9ec6, 0xffffff, 0xffd24a], 10, 1.5, 1.2, 0.7);
-    sfx.buy();
-    malekSay(null, "Looking amazing! 🛋️✨");
-    _selectedId = null;
-    _rebuildPanel();
-    return;
   }
+  if (changed) savePlaced();
+}
 
-  // hit a placed decor mesh?
-  for (const h of hits) {
-    const slotId = h.object.userData.decorSlotId;
-    if (!slotId) continue;
-    const itemId = S.placedFurniture[slotId];
-    if (!itemId) continue;
-    if (_selectedId && _selectedId !== itemId) {
-      // swap: place selected item here, remove old
-      const cur = Object.entries(S.placedFurniture).find(([, v]) => v === _selectedId);
-      if (cur) removeItem(cur[0]);
-      removeItem(slotId);
-      placeItem(slotId, _selectedId);
-      sfx.buy();
-      malekSay(null, "Swapped! 🔄✨");
-      _selectedId = null;
-    } else {
-      // select this item for moving
-      _selectedId = itemId;
-      malekSay(null, "Tap a glowing spot to move it, or tap the panel card again to remove 🗑️");
-      sfx.click();
-    }
-    _rebuildPanel();
-    return;
-  }
+export function initDecor(group, builtinRegs) {
+  interiorGroup = group;
+  migrate();
+  // register built-in furniture (always present in the room, but movable)
+  (builtinRegs || []).forEach(reg => {
+    const g = reg.group;
+    g.userData.movableId = reg.id;
+    g.traverse(c => { c.userData.movableId = reg.id; });
+    const def = { x: g.position.x, z: g.position.z, rot: g.rotation.y };
+    movables[reg.id] = { id: reg.id, kind: 'builtin', group: g, foot: FOOT[reg.id] || DEFAULT_FOOT, label: reg.label, lines: reg.lines, def, placed: true };
+    const t = S.placedFurniture[reg.id];
+    if (t && typeof t === 'object' && 'x' in t) { g.position.set(t.x, 0, t.z); g.rotation.y = t.rot || 0; }
+  });
+  // spawn any saved catalog placements at their stored transforms
+  Object.keys(S.placedFurniture).forEach(id => {
+    if (movables[id]) return;                    // built-in, already applied above
+    if (!CATALOG.some(i => i.id === id)) { delete S.placedFurniture[id]; return; }
+    const e = spawnCatalog(id);
+    const t = S.placedFurniture[id];
+    e.placed = true;
+    e.group.position.set(t.x, 0, t.z); e.group.rotation.y = t.rot || 0;
+  });
+  rebuildCollision();
 }
 
 /* ============================== button wiring ============================== */
-$('decorBtn').addEventListener('pointerdown',    e => { e.preventDefault(); enterDecorMode(); });
-$('decorDoneBtn').addEventListener('pointerdown', e => { e.preventDefault(); exitDecorMode(); });
+$('decorBtn').addEventListener('pointerdown',     e => { e.preventDefault(); enterDecorMode(); });
+$('decorDoneBtn').addEventListener('pointerdown',  e => { e.preventDefault(); exitDecorMode(); });
+$('decorRotateBtn').addEventListener('pointerdown', e => { e.preventDefault(); rotateSelected(); });

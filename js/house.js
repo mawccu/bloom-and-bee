@@ -26,12 +26,14 @@ const intMalekLines = {
   vase:  ["Fresh flowers just like the meadow 🌸", "Picked these digitally, no bees involved 😄", "They never wilt in here 💐"],
   rug:   ["I rolled this rug out myself 🤭", "Softest rug in 3D space 🥰", "Tap to redecorate anytime!"],
   shelf: ["All your favourite books 📚", "Top shelf is my coding journals… don't look 😳", "One day I'll fill it with our travel photos 🌍"],
+  lamp:  ["Cosy glow, just for you 🪔", "I'll keep the light on 🥰", "Move it wherever feels homey ✨"],
 };
 
 function buildInterior() {
   const G = new THREE.Group();
   G.position.copy(INT_ORIGIN);
   scene.add(G);
+  const regs = []; // movable built-in furniture registered with the decor system
 
   G.add(new THREE.HemisphereLight(0xfff2e4, 0xd49040, 1.6));
   const lamp = new THREE.PointLight(0xffe8b0, 1.8, 30);
@@ -84,13 +86,15 @@ function buildInterior() {
   // Window sill
   const sill = new THREE.Mesh(new THREE.BoxGeometry(4.0,0.14,0.38), lam(0xffffff)); sill.position.set(0,1.3,-7.86); G.add(sill);
 
-  // Rug (center floor, bigger)
+  // Rug (center floor, bigger) — wrapped in a group so it can be freely moved
+  const rugG = new THREE.Group(); rugG.position.set(0,0,0.5); G.add(rugG);
   const rugMats = INT_RUG_COLORS.map(c => lam(c));
   const rugMesh = new THREE.Mesh(new THREE.BoxGeometry(6,0.06,4.5), rugMats[+store.get('intRug',0)||0]);
-  rugMesh.position.set(0,0.02,0.5); G.add(rugMesh);
+  rugMesh.position.set(0,0.02,0); rugG.add(rugMesh);
   const rugBorder = new THREE.Mesh(new THREE.BoxGeometry(6.35,0.05,4.85), lam(0xfff3f8));
-  rugBorder.position.set(0,0.01,0.5); G.add(rugBorder);
+  rugBorder.position.set(0,0.01,0); rugG.add(rugBorder);
   intItems.push({ mesh: rugMesh, label: 'rug', lines: intMalekLines.rug, mats: rugMats, storeKey: 'intRug', idx: +store.get('intRug',0)||0 });
+  regs.push({ id: 'rug', group: rugG, label: 'rug', lines: intMalekLines.rug });
 
   // BED (back-right corner, headboard to the back wall)
   const bedG = new THREE.Group(); bedG.position.set(4.8,0,-4.3); G.add(bedG);
@@ -109,6 +113,7 @@ function buildInterior() {
   const sideT = new THREE.Mesh(new THREE.BoxGeometry(0.8,0.7,0.8), lam(0xa06840)); sideT.position.set(-1.7,0.35,1.7); bedG.add(sideT);
   const sideL = new THREE.Mesh(new THREE.SphereGeometry(0.12,8,6), bas(0xffe8b0,{transparent:true,opacity:0.9})); sideL.position.set(-1.7,0.9,1.7); bedG.add(sideL);
   intItems.push({ mesh: coverMesh, label: 'bed', lines: intMalekLines.bed, mats: coverMats, storeKey: 'intBed', idx: +store.get('intBed',0)||0 });
+  regs.push({ id: 'bed', group: bedG, label: 'bed', lines: intMalekLines.bed });
 
   // DESK + LAPTOP (back-left corner, against the back wall)
   const deskG = new THREE.Group(); deskG.position.set(-4.8,0,-5.0); G.add(deskG);
@@ -123,6 +128,7 @@ function buildInterior() {
   chairG.add(function(){ const m=new THREE.Mesh(new THREE.BoxGeometry(0.95,0.55,0.09),lam(0xff9ec6)); m.position.set(0,0.9,-0.43); return m; }());
   [-0.4,0.4].forEach(x=>{ [-0.4,0.4].forEach(z=>{ const l=new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.04,0.58,6),lam(0xa06840)); l.position.set(x,0.29,z); chairG.add(l); }); });
   intItems.push({ mesh: screenGlo, label: 'desk', lines: intMalekLines.desk, mats: null, storeKey: null, idx: 0 });
+  regs.push({ id: 'desk', group: deskG, label: 'desk', lines: intMalekLines.desk });
 
   // BOOKSHELF (left wall, mid — deterministic, tidy rows of books)
   const shelfG = new THREE.Group(); shelfG.position.set(-6.4,0,1.8); G.add(shelfG);
@@ -140,6 +146,7 @@ function buildInterior() {
   const plantStem = new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.09,0.24,8), lam(0x8a7a60)); plantStem.position.set(0.8,3.72,0.1); shelfG.add(plantStem);
   for (let i=0;i<5;i++) { const a=(i/5)*Math.PI*2; const leaf=new THREE.Mesh(new THREE.SphereGeometry(0.11,6,5),lam(0x5cba6a)); leaf.position.set(0.8+Math.cos(a)*0.13,3.9,0.1+Math.sin(a)*0.13); shelfG.add(leaf); }
   intItems.push({ mesh: shelfG.children[1], label: 'shelf', lines: intMalekLines.shelf, mats: null, storeKey: null, idx: 0 });
+  regs.push({ id: 'shelf', group: shelfG, label: 'shelf', lines: intMalekLines.shelf });
 
   // FLOWER VASE (window sill — bigger room means further back)
   const vaseG = new THREE.Group(); vaseG.position.set(2.0,0,-7.6); G.add(vaseG);
@@ -155,6 +162,7 @@ function buildInterior() {
   lampG.add(function(){ const m=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.09,1.8,8),lam(0xb06a30)); m.position.y=0.9; return m; }());
   lampG.add(function(){ const m=new THREE.Mesh(new THREE.ConeGeometry(0.32,0.38,12,1,true),lam(0xffd24a,{side:THREE.DoubleSide})); m.position.y=1.95; return m; }());
   const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.12,8,6), bas(0xffe8b0,{transparent:true,opacity:0.9})); bulb.position.set(0,1.78,0); lampG.add(bulb);
+  regs.push({ id: 'lamp', group: lampG, label: 'lamp', lines: intMalekLines.lamp });
 
   // Vanity mirror (right wall)
   const mirrorG = new THREE.Group(); mirrorG.position.set(7.5,0,3.0); G.add(mirrorG);
@@ -175,9 +183,10 @@ function buildInterior() {
 
   // Build raycaster targets for tap detection
   intItems.forEach(it => { it.mesh.userData.intItem = it; });
+  return { G, regs };
 }
-buildInterior();
-initDecor();
+const _interior = buildInterior();
+initDecor(_interior.G, _interior.regs);
 
 const INT_SPAWN = new THREE.Vector3(INT_ORIGIN.x, 0, INT_ORIGIN.z + 6.5); // just inside the wider doorway
 const INT_R = 6.5;

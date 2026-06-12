@@ -207,6 +207,12 @@
   #decorBtn:active { transform:translateY(3px); box-shadow:0 1px 0 #cc5a8a; }
   #decorDoneBtn { position:fixed; bottom:calc(16px + env(safe-area-inset-bottom)); right:16px;
     z-index:220; pointer-events:auto; }
+  #decorRotateBtn { position:fixed; bottom:calc(16px + env(safe-area-inset-bottom)); left:16px;
+    z-index:220; pointer-events:auto; padding:11px 20px; border-radius:22px; border:none; cursor:pointer;
+    font:700 15px "Baloo 2","BloomEmoji",system-ui,sans-serif; color:#fff;
+    background:linear-gradient(180deg,#b9a0ff,#8a6cff);
+    box-shadow:0 4px 0 #6a4fd0, 0 6px 18px rgba(120,100,255,.38); }
+  #decorRotateBtn:active { transform:translateY(3px); box-shadow:0 1px 0 #6a4fd0; }
   #decorPanel { position:fixed; bottom:calc(70px + env(safe-area-inset-bottom)); left:50%;
     transform:translateX(-50%); display:flex; flex-wrap:nowrap; gap:8px; overflow-x:auto;
     padding:10px 14px; background:rgba(255,248,255,.94); border-radius:20px;
