@@ -1,6 +1,6 @@
 /* ============================== profiles / storage ============================== */
 export const PROFILE_KEY = 'bloombee_profile';
-export const PROFILE_DATA_KEYS = ['best','bestlvl','curlevel','hd','snd','chime','ctrl','dress','hair','intRug','intBed','intVase'];
+export const PROFILE_DATA_KEYS = ['best','bestlvl','curlevel','hd','snd','chime','ctrl','dress','hair','intRug','intBed','intVase','bank'];
 export let profileId = localStorage.getItem(PROFILE_KEY) || '';
 const nsKey = k => profileId ? `bloombee_${profileId}_${k}` : 'bloombee_' + k;
 export const store = {
@@ -48,6 +48,9 @@ export const S = {
   // upgrades / run resources
   upg: { shoes: 0, basket: 0, wand: 0, charm: 0, time: 0, lucky: 0, shield: 0 },
   hearts: 3, petals: 0, shieldCharges: 0, boostT: 0,
+
+  // persistent currency bank (survives lost runs; stored as JSON under the 'bank' save key)
+  bank: (() => { try { return Object.assign({ petals: 0, coins: 0 }, JSON.parse(store.get('bank', '') || 'null') || {}); } catch (e) { return { petals: 0, coins: 0 }; } })(),
 
   // game flow
   state: 'menu',

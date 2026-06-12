@@ -406,6 +406,10 @@ export function _doLevelWon(fromUlt) {
   const bonus = Math.round(S.timeLeft) * 5;
   const petalBonus = 2 + S.level;
   S.score += bonus; S.petals += petalBonus;
+  // persistent bank: deposit the petals earned this level (separate from per-run shop petals; never resets)
+  S.bank.petals += petalBonus;
+  store.set('bank', JSON.stringify(S.bank));
+  S.hudDirty = true;
   S.hearts = Math.min(MAX_HEARTS, S.hearts + 1);
   S.best = Math.max(S.best, S.score); store.set('best', S.best);
   S.bestLvl = Math.max(S.bestLvl, S.level); store.set('bestlvl', S.bestLvl);

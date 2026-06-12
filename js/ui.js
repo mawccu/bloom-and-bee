@@ -37,18 +37,41 @@ export function importSave(code) {
    localStorage stays the instant offline store; the cloud is a durable backup that syncs on
    top using the SAME save blob (SAVE_KEYS). All cloud calls are best-effort — if they fail
    (offline / blocked) the game is unaffected and just syncs next time a call succeeds. */
+// 'bank' is the one structured value: stored as a JSON string in localStorage but carried
+// in the cloud blob (jsonb) as a real object, so it round-trips as { petals, coins } — not "[object Object]".
+const JSON_KEYS = ['bank'];
+const safeParse = v => { try { return JSON.parse(v); } catch (e) { return null; } };
 function getSaveBlob() {
   const data = {};
-  SAVE_KEYS.forEach(k => { const v = store.get(k, null); if (v !== null) data[k] = v; });
+  SAVE_KEYS.forEach(k => {
+    const v = store.get(k, null);
+    if (v === null) return;
+    data[k] = JSON_KEYS.includes(k) ? (safeParse(v) ?? v) : v;
+  });
   return data;
 }
 function applySaveBlob(data) {
-  SAVE_KEYS.forEach(k => { if (data[k] !== undefined) store.set(k, data[k]); });
+  SAVE_KEYS.forEach(k => {
+    if (data[k] === undefined) return;
+    if (JSON_KEYS.includes(k)) {
+      const obj = typeof data[k] === 'string' ? safeParse(data[k]) : data[k];
+      if (obj != null) {
+        store.set(k, JSON.stringify(obj));
+        if (k === 'bank') S.bank = Object.assign({ petals: 0, coins: 0 }, obj);
+      }
+    } else {
+      store.set(k, data[k]);
+    }
+  });
 }
 const blobLevel = b => Math.max(1, parseInt((b && b.curlevel) || '1', 10) || 1);
+// order-independent canonical form (jsonb may reorder object keys vs our local order)
+const canon = v => (v && typeof v === 'object')
+  ? JSON.stringify(Object.keys(v).sort().reduce((o, k) => (o[k] = v[k], o), {}))
+  : String(v);
 // does the cloud blob carry any value that differs from local for a key it actually defines?
 const cloudBrings = (cloud, local) =>
-  SAVE_KEYS.some(k => cloud[k] !== undefined && String(cloud[k]) !== String(local[k]));
+  SAVE_KEYS.some(k => cloud[k] !== undefined && canon(cloud[k]) !== canon(local[k]));
 
 // tiny, non-intrusive "☁️ synced" toast
 let _syncEl = null, _syncTimer = null;
@@ -288,6 +311,8 @@ export function refreshHud() {
     $('score').textContent = S.score;
     $('lvl').textContent = S.level;
     $('petals').textContent = S.petals;
+    $('bankPetals').textContent = S.bank.petals;
+    $('bankCoins').textContent = S.bank.coins;
     $('hearts').textContent = '💗'.repeat(Math.max(0, S.hearts)) + '🤍'.repeat(Math.max(0, MAX_HEARTS - S.hearts));
     S.hudDirty = false;
   }
