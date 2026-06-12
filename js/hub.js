@@ -476,8 +476,13 @@ export function enterHub() {
   S.ultActive = false;
   S.autoWalk = null;
   S.tapTarget = null;
+  // clear any lingering bee-sting state so the menu/hub is visually clean (no dizzy
+  // stars, body wobble or camera shake carrying over from a stung game-over)
+  S.stunned = 0; S.shake = 0; S.invuln = 0;
   S.walkCenter = { x: O.x, z: O.z }; S.walkR = HUB_R;
   girl.position.set(O.x, 0, O.z + 8); girl.rotation.set(0, Math.PI, 0); girl.visible = true;
+  girl.rotation.z = 0;
+  if (girlRefs.stars) girlRefs.stars.visible = false;
   girlRefs.bubble.visible = false;
   camFocus.copy(girl.position);
   paintSky(SKIES.morning);

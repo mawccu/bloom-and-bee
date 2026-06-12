@@ -471,7 +471,10 @@ export function toMenu() {
   S.state = 'menu';
   endMalekUlt();
   clearFlowers(false); clearBees(); clearPickups(); hideButterfly(); bunnyHide(); cloudHide(); crowHide();
+  // clear lingering bee-sting visuals (dizzy stars / wobble / shake) on the menu path too
+  S.stunned = 0; S.shake = 0; S.invuln = 0;
   girl.position.set(0, 0, 0); girl.rotation.set(0, 0, 0); girl.visible = true;
+  girlRefs.stars.visible = false;
   girlRefs.bubble.visible = false;
   S.tapTarget = null; tapMarker.visible = false;
   paintSky(SKIES.noon);
