@@ -9,6 +9,7 @@ import { raycaster, showFixedJoy } from './input.js';
 import { scheduleCloudSave } from './ui.js';
 import { camFocus } from './gameplay.js';
 import { enterHub, fadeTransition } from './hub.js';
+import { initDecor, enterDecorMode, exitDecorMode, isDecorMode, handleDecorTap } from './decor.js';
 
 /* ============================== house interior ============================== */
 const INT_ORIGIN = new THREE.Vector3(0, 0, 300);
@@ -176,6 +177,7 @@ function buildInterior() {
   intItems.forEach(it => { it.mesh.userData.intItem = it; });
 }
 buildInterior();
+initDecor();
 
 const INT_SPAWN = new THREE.Vector3(INT_ORIGIN.x, 0, INT_ORIGIN.z + 6.5); // just inside the wider doorway
 const INT_R = 6.5;
@@ -197,11 +199,12 @@ export function enterHouseInterior() {
   $('kissBtn').classList.add('hidden'); $('hint').classList.add('hidden'); $('housePrompt').classList.add('hidden');
   $('hud2').classList.remove('hidden');
   $('exitHouseBtn').classList.remove('hidden');
-  $('interiorHint').textContent = 'Walk around your room! ✨';
+  $('decorBtn').classList.remove('hidden');
+  $('interiorHint').textContent = 'Walk around! Tap 🛋️ to decorate ✨';
   $('interiorHint').classList.remove('hidden'); $('interiorHint').style.opacity = 1;
   setTimeout(() => { $('interiorHint').style.opacity = 0; setTimeout(() => $('interiorHint').classList.add('hidden'), 600); }, 2600);
   if (S.ctrlMode === 'fixed') showFixedJoy();
-  malekSay('house', "Welcome to your cozy room! 🏠 walk around — decorating comes soon 💕");
+  malekSay('house', "Welcome home! 🏠 Walk around, then tap 🛋️ to place your furniture ✨");
   S.hudDirty = true;
 }
 
@@ -212,6 +215,8 @@ export function enterHouse() { initAudio(); sfx.click(); fadeTransition(() => en
 export function exitHouse() {
   $('exitHouseBtn').classList.add('hidden');
   $('interiorHint').classList.add('hidden');
+  $('decorBtn').classList.add('hidden');
+  if (isDecorMode()) exitDecorMode();
   sfx.click();
   malekSay('houseOut', "Back to the hub! Where to next? 🌸");
   S.autoWalk = { x: INT_ORIGIN.x, z: INT_ORIGIN.z + 8.5 };
@@ -219,14 +224,15 @@ export function exitHouse() {
 }
 
 export function updateInteriorCamera() {
-  const R = 5.5, H = 2.8;
+  const R = 8, H = 14;
   const cx = INT_ORIGIN.x + Math.sin(S.intYaw) * R;
   const cz = INT_ORIGIN.z + Math.cos(S.intYaw) * R;
   camera.position.set(cx, INT_ORIGIN.y + H, cz);
-  camera.lookAt(INT_ORIGIN.x, INT_ORIGIN.y + 1.2, INT_ORIGIN.z);
+  camera.lookAt(INT_ORIGIN.x, INT_ORIGIN.y + 0.8, INT_ORIGIN.z);
 }
 
 export function tapInterior(clientX, clientY) {
+  if (isDecorMode()) { handleDecorTap(clientX, clientY); return; }
   raycaster.setFromCamera({ x: (clientX/innerWidth)*2-1, y: -(clientY/innerHeight)*2+1 }, camera);
   const meshes = intItems.map(it => it.mesh);
   const hits = raycaster.intersectObjects(meshes, true);

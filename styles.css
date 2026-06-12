@@ -184,6 +184,35 @@
     font-weight:700; font-size:15px; pointer-events:none;
     animation:hintBob 1.4s ease-in-out infinite; transition:opacity .5s; }
 
+  /* ---------- decor mode ---------- */
+  #decorBtn { position:fixed; bottom:calc(108px + env(safe-area-inset-bottom)); right:16px;
+    padding:11px 20px; border-radius:22px; border:none; cursor:pointer; z-index:12;
+    font:700 15px "Baloo 2",system-ui,sans-serif; color:#fff; pointer-events:auto;
+    background:linear-gradient(180deg,#ff9ec6,#ff70aa);
+    box-shadow:0 4px 0 #cc5a8a, 0 6px 18px rgba(255,100,160,.38); }
+  #decorBtn:active { transform:translateY(3px); box-shadow:0 1px 0 #cc5a8a; }
+  #decorDoneBtn { position:fixed; bottom:calc(16px + env(safe-area-inset-bottom)); right:16px;
+    z-index:220; pointer-events:auto; }
+  #decorPanel { position:fixed; bottom:calc(70px + env(safe-area-inset-bottom)); left:50%;
+    transform:translateX(-50%); display:flex; flex-wrap:nowrap; gap:8px; overflow-x:auto;
+    padding:10px 14px; background:rgba(255,248,255,.94); border-radius:20px;
+    max-width:92vw; box-shadow:0 4px 22px rgba(120,60,100,.22);
+    backdrop-filter:blur(10px); z-index:210; pointer-events:auto; }
+  #decorPanel::-webkit-scrollbar { display:none; }
+  .decorCard { display:flex; flex-direction:column; align-items:center; gap:3px;
+    padding:8px 11px 7px; border-radius:14px; border:2.5px solid transparent;
+    background:#fff; font-family:inherit; cursor:pointer; min-width:68px;
+    box-shadow:0 2px 8px rgba(180,110,160,.18); transition:border-color .12s, transform .08s; }
+  .decorCard:active { transform:scale(.93); }
+  .decorCard.selected { border-color:#ff9ec6; background:#fff5f9;
+    box-shadow:0 2px 14px rgba(255,120,180,.38); }
+  .decorCard.placed { opacity:.58; }
+  .decorCard .dc-em  { font-size:24px; line-height:1.15; }
+  .decorCard .dc-nm  { font-size:11px; font-weight:800; color:#7a4f6d; text-align:center; white-space:nowrap; }
+  .decorCard .dc-tag { font-size:9px; font-weight:800; color:#fff; background:#ffb0cc;
+    border-radius:999px; padding:1px 7px; }
+  .decorEmpty { color:#a07080; font-size:13px; font-weight:700; padding:6px 10px; white-space:nowrap; }
+
   /* ---------- browse-store proximity button ---------- */
   #browseStoreBtn { position:fixed; bottom:calc(112px + env(safe-area-inset-bottom)); left:50%;
     transform:translateX(-50%); z-index:12; pointer-events:auto;

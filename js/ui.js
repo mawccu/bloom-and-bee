@@ -40,7 +40,7 @@ export function importSave(code) {
    (offline / blocked) the game is unaffected and just syncs next time a call succeeds. */
 // 'bank' is the one structured value: stored as a JSON string in localStorage but carried
 // in the cloud blob (jsonb) as a real object, so it round-trips as { petals, coins } — not "[object Object]".
-const JSON_KEYS = ['bank', 'ownedItems'];
+const JSON_KEYS = ['bank', 'ownedItems', 'placedFurniture'];
 const safeParse = v => { try { return JSON.parse(v); } catch (e) { return null; } };
 function getSaveBlob() {
   const data = {};
@@ -70,6 +70,13 @@ function applySaveBlob(data) {
         const merged = [...new Set([...localArr, ...cloudArr])];
         store.set(k, JSON.stringify(merged));
         S.ownedItems = merged;
+      } else if (k === 'placedFurniture') {
+        // merge: union by slot; cloud wins on conflict (more recent placement)
+        const local = (S.placedFurniture && typeof S.placedFurniture === 'object') ? S.placedFurniture : {};
+        const cloud = (obj && typeof obj === 'object' && !Array.isArray(obj)) ? obj : {};
+        const merged = { ...local, ...cloud };
+        store.set(k, JSON.stringify(merged));
+        S.placedFurniture = merged;
       } else {
         store.set(k, JSON.stringify(obj));
       }

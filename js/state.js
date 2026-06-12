@@ -1,6 +1,6 @@
 /* ============================== profiles / storage ============================== */
 export const PROFILE_KEY = 'bloombee_profile';
-export const PROFILE_DATA_KEYS = ['best','bestlvl','curlevel','hd','snd','chime','ctrl','dress','hair','intRug','intBed','intVase','bank','ownedItems'];
+export const PROFILE_DATA_KEYS = ['best','bestlvl','curlevel','hd','snd','chime','ctrl','dress','hair','intRug','intBed','intVase','bank','ownedItems','placedFurniture'];
 export let profileId = localStorage.getItem(PROFILE_KEY) || '';
 const nsKey = k => profileId ? `bloombee_${profileId}_${k}` : 'bloombee_' + k;
 export const store = {
@@ -54,6 +54,9 @@ export const S = {
 
   // owned items (purchased from the shop; stored as JSON array)
   ownedItems: (() => { try { return JSON.parse(store.get('ownedItems', '[]') || '[]') || []; } catch (e) { return []; } })(),
+
+  // placed furniture (slot → itemId map; persists house layout)
+  placedFurniture: (() => { try { return JSON.parse(store.get('placedFurniture', '{}') || '{}') || {}; } catch (e) { return {}; } })(),
 
   // game flow
   state: 'menu',
