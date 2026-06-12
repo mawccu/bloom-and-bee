@@ -77,7 +77,7 @@ function makePath(G, x1, z1, x2, z2, w = 1.7) {
 }
 /* -------- 3-D floating canvas-sprite name label -------- */
 const floatingLabels = [];
-function makeFloatingLabel(G, text, color, x, baseY, z) {
+function makeFloatingLabel(G, text, color, x, baseY, z, centerText = false) {
   const W = 480, H = 96;
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
   const ctx = cv.getContext('2d');
@@ -98,7 +98,7 @@ function makeFloatingLabel(G, text, color, x, baseY, z) {
   }
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#6d3f62';
-  ctx.fillText(text, W / 2, H / 2 + 9);
+  ctx.fillText(text, W / 2, centerText ? H / 2 : H / 2 + 9);
   const tex = new THREE.CanvasTexture(cv);
   const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, fog: false });
   const sprite = new THREE.Sprite(mat);
@@ -233,7 +233,7 @@ function buildShopFront(G, b) {
     glass.position.set(b.x + x, 2.2, b.z + 2.13); G.add(glass);
   });
   makeBeacon(G, 0x5aa8f0, b.x, 6.2, b.z);
-  makeFloatingLabel(G, '🛍️  The Shop', 0x5aa8f0, b.x, 5.5, b.z);
+  makeFloatingLabel(G, '🛍️  The Shop', 0x5aa8f0, b.x, 5.5, b.z, true);
 }
 
 function buildCottage(G, b) {
