@@ -41,12 +41,28 @@ const FOOT = {
   candle_rose:  { rx: 0.3,  rz: 0.3,  collide: false },
   cat_plush:    { rx: 0.35, rz: 0.35, collide: false },
   clock_wall:   { rx: 0.3,  rz: 0.3,  collide: false },
+  // expanded economy pieces
+  stool_round:  { rx: 0.32, rz: 0.32, collide: true  },
+  chair_wood:   { rx: 0.4,  rz: 0.4,  collide: true  },
+  coffee_table: { rx: 0.7,  rz: 0.4,  collide: true  },
+  table_round:  { rx: 0.74, rz: 0.74, collide: true  },
+  rug_round:    { rx: 1.5,  rz: 1.5,  collide: false },
+  plant_tall:   { rx: 0.32, rz: 0.32, collide: true  },
+  sofa_pink:    { rx: 0.95, rz: 0.46, collide: true  },
+  floor_lamp:   { rx: 0.3,  rz: 0.3,  collide: true  },
+  fridge_mini:  { rx: 0.4,  rz: 0.38, collide: true  },
+  tv_flat:      { rx: 0.78, rz: 0.26, collide: true  },
+  piano_grand:  { rx: 0.82, rz: 0.62, collide: true  },
+  painting_flower:{ rx: 0.5, rz: 0.4, collide: false },
+  guitar_stand: { rx: 0.4,  rz: 0.3,  collide: false },
+  globe_desk:   { rx: 0.25, rz: 0.25, collide: false },
+  trophy_gold:  { rx: 0.2,  rz: 0.2,  collide: false },
 };
 const DEFAULT_FOOT = { rx: 0.5, rz: 0.5, collide: false };
 const PLACE_LINES = ["Looking amazing! 🛋️✨", "Perfect spot 🥰", "Our cosy little home 💕", "Love what you did there! ✨"];
 
 // Items that can be placed on desk / shelf surfaces (small decorations only)
-const SURFACE_CAPABLE = new Set(['teapot_flower', 'candle_rose', 'cat_plush', 'vase_flowers', 'clock_wall', 'poster_stars']);
+const SURFACE_CAPABLE = new Set(['teapot_flower', 'candle_rose', 'cat_plush', 'vase_flowers', 'clock_wall', 'poster_stars', 'globe_desk', 'trophy_gold']);
 // Surface definitions: dy = top surface y in local-room coords, hw/hd = half-extents of the top face
 const SURFACE_DEF = {
   desk:  { dy: 0.97, hw: 1.5,  hd: 0.70 },
@@ -204,6 +220,174 @@ function buildDecorMesh(itemId) {
       hHand.position.y = 0.93; G.add(hHand);
       const mHand = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.04, 0.04), bas(0x3a2a10));
       mHand.position.y = 0.93; mHand.rotation.z = 1.05; G.add(mHand);
+      break;
+    }
+    case 'stool_round': {
+      const seat = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.1, 16), lam(0xff9ec6));
+      seat.position.y = 0.5; G.add(seat);
+      for (let i = 0; i < 3; i++) {
+        const a = (i / 3) * Math.PI * 2;
+        const l = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.5, 6), lam(0x9a6030));
+        l.position.set(Math.cos(a) * 0.18, 0.25, Math.sin(a) * 0.18); l.rotation.x = 0.08; G.add(l);
+      }
+      break;
+    }
+    case 'chair_wood': {
+      const seat = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.1, 0.55), lam(0xb07a45));
+      seat.position.y = 0.5; G.add(seat);
+      const back = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.62, 0.09), lam(0xb07a45));
+      back.position.set(0, 0.82, -0.23); G.add(back);
+      [-0.22, 0.22].forEach(x => [-0.22, 0.22].forEach(z => {
+        const l = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.5, 6), lam(0x9a6030));
+        l.position.set(x, 0.25, z); G.add(l);
+      }));
+      break;
+    }
+    case 'coffee_table': {
+      const top = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.1, 0.7), lam(0xc8935a));
+      top.position.y = 0.45; G.add(top);
+      [-0.55, 0.55].forEach(x => [-0.27, 0.27].forEach(z => {
+        const l = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.4, 0.08), lam(0x9a6030));
+        l.position.set(x, 0.2, z); G.add(l);
+      }));
+      break;
+    }
+    case 'table_round': {
+      const top = new THREE.Mesh(new THREE.CylinderGeometry(0.72, 0.72, 0.1, 20), lam(0xc8935a));
+      top.position.y = 0.95; G.add(top);
+      const col = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 0.9, 10), lam(0x9a6030));
+      col.position.y = 0.5; G.add(col);
+      const base = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.4, 0.08, 16), lam(0x9a6030));
+      base.position.y = 0.06; G.add(base);
+      break;
+    }
+    case 'rug_round': {
+      const border = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, 0.04, 28), lam(0xfff3f8));
+      border.position.y = 0.02; G.add(border);
+      const top = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.3, 0.05, 28), lam(0x9fe6b8));
+      top.position.y = 0.035; G.add(top);
+      break;
+    }
+    case 'plant_tall': {
+      const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.2, 0.4, 12), lam(0xc96a4a));
+      pot.position.y = 0.2; G.add(pot);
+      const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 1.3, 8), lam(0x6a8a4a));
+      stem.position.y = 1.0; G.add(stem);
+      for (let i = 0; i < 7; i++) {
+        const a = (i / 7) * Math.PI * 2;
+        const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.26, 7, 6), lam(0x4da860));
+        leaf.scale.set(0.5, 1.1, 0.5);
+        leaf.position.set(Math.cos(a) * 0.22, 1.35 + (i % 3) * 0.18, Math.sin(a) * 0.22);
+        leaf.rotation.z = Math.cos(a) * 0.5; G.add(leaf);
+      }
+      break;
+    }
+    case 'sofa_pink': {
+      const base = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.4, 0.8), lam(0xff9ec6));
+      base.position.y = 0.4; G.add(base);
+      const seat = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.2, 0.7), lam(0xffb7d5));
+      seat.position.set(0, 0.62, 0.03); G.add(seat);
+      const back = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.7, 0.25), lam(0xff9ec6));
+      back.position.set(0, 0.75, -0.4); G.add(back);
+      [-0.9, 0.9].forEach(x => {
+        const arm = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.55, 0.8), lam(0xff86b8));
+        arm.position.set(x, 0.55, 0); G.add(arm);
+      });
+      break;
+    }
+    case 'floor_lamp': {
+      const base = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 0.07, 14), lam(0x57606e));
+      base.position.y = 0.04; G.add(base);
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 1.7, 8), lam(0x8a93a0));
+      pole.position.y = 0.9; G.add(pole);
+      const shade = new THREE.Mesh(new THREE.ConeGeometry(0.34, 0.42, 12, 1, true), lam(0xfff0c0, { side: THREE.DoubleSide }));
+      shade.position.y = 1.8; G.add(shade);
+      const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), bas(0xffe8b0, { transparent: true, opacity: 0.95 }));
+      bulb.position.y = 1.66; G.add(bulb);
+      break;
+    }
+    case 'fridge_mini': {
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.4, 0.65), lam(0xf0f4f8));
+      body.position.y = 0.7; G.add(body);
+      const split = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.04, 0.66), lam(0xc8d0d8));
+      split.position.y = 0.95; G.add(split);
+      const handle = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.5, 0.05), lam(0xb0bcc8));
+      handle.position.set(0.28, 1.15, 0.34); G.add(handle);
+      break;
+    }
+    case 'tv_flat': {
+      const stand = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.5, 0.4), lam(0x5a4636));
+      stand.position.y = 0.25; G.add(stand);
+      const screen = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.85, 0.08), lam(0x1a1a22));
+      screen.position.set(0, 1.05, 0); G.add(screen);
+      const glo = new THREE.Mesh(new THREE.BoxGeometry(1.38, 0.74, 0.05), bas(0x6ab0ff, { transparent: true, opacity: 0.85 }));
+      glo.position.set(0, 1.05, 0.05); G.add(glo);
+      break;
+    }
+    case 'piano_grand': {
+      const body = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.5, 1.1), lam(0x201a1a));
+      body.position.y = 0.7; G.add(body);
+      const lid = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.06, 1.1), lam(0x2a2222));
+      lid.position.set(0, 0.98, 0); G.add(lid);
+      const openLid = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.05, 1.0), lam(0x150f0f));
+      openLid.position.set(0, 1.35, -0.1); openLid.rotation.x = -0.5; G.add(openLid);
+      const keys = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.08, 0.25), lam(0xfaf8f0));
+      keys.position.set(0, 0.5, 0.62); G.add(keys);
+      [[-0.65, -0.45], [0.65, -0.45], [0, 0.45]].forEach(([x, z]) => {
+        const l = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.45, 8), lam(0x150f0f));
+        l.position.set(x, 0.22, z); G.add(l);
+      });
+      break;
+    }
+    case 'painting_flower': {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.6, 0.6), lam(0xa06840));
+      leg.position.y = 0.3; leg.rotation.x = 0.28; G.add(leg);
+      const frame = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.05, 0.06), lam(0xd4a030));
+      frame.position.y = 0.72; G.add(frame);
+      const canvas = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.9, 0.05), bas(0xeaf6ff));
+      canvas.position.y = 0.72; G.add(canvas);
+      const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.3, 5), lam(0x5cba6a));
+      stem.position.set(0, 0.6, 0.05); G.add(stem);
+      const fl = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6), lam(0xff7aa0));
+      fl.position.set(0, 0.78, 0.06); G.add(fl);
+      break;
+    }
+    case 'guitar_stand': {
+      const body = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 10), lam(0xd98a3a));
+      body.scale.set(0.7, 1.0, 0.32); body.position.y = 0.5; G.add(body);
+      const hole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.06, 12), bas(0x2a1a10));
+      hole.rotation.x = Math.PI / 2; hole.position.set(0, 0.55, 0.1); G.add(hole);
+      const neck = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.95, 0.07), lam(0x6a4a30));
+      neck.position.y = 1.2; G.add(neck);
+      const head = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.2, 0.06), lam(0x3a2a1a));
+      head.position.y = 1.72; G.add(head);
+      break;
+    }
+    case 'globe_desk': {
+      const base = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.13, 0.08, 12), lam(0x9a6030));
+      base.position.y = 0.04; G.add(base);
+      const arc = new THREE.Mesh(new THREE.TorusGeometry(0.18, 0.02, 6, 16, Math.PI), lam(0xd4a030));
+      arc.position.y = 0.28; arc.rotation.z = 0.2; G.add(arc);
+      const ball = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 10), lam(0x5aa8f0));
+      ball.position.y = 0.28; G.add(ball);
+      for (let i = 0; i < 3; i++) {
+        const a = (i / 3) * Math.PI * 2;
+        const land = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 5), lam(0x6ec07a));
+        land.position.set(Math.cos(a) * 0.12, 0.28 + Math.sin(a) * 0.06, 0.1); G.add(land);
+      }
+      break;
+    }
+    case 'trophy_gold': {
+      const base = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.1, 0.22), lam(0x6a4a30));
+      base.position.y = 0.05; G.add(base);
+      const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.18, 8), lam(0xf5c542));
+      stem.position.y = 0.19; G.add(stem);
+      const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.08, 0.24, 12), lam(0xffd24a));
+      cup.position.y = 0.4; G.add(cup);
+      [-0.16, 0.16].forEach(x => {
+        const h = new THREE.Mesh(new THREE.TorusGeometry(0.06, 0.018, 6, 12), lam(0xffd24a));
+        h.position.set(x, 0.42, 0); h.rotation.y = Math.PI / 2; G.add(h);
+      });
       break;
     }
     default: {
