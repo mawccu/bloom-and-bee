@@ -205,8 +205,13 @@
     background:linear-gradient(180deg,#ff9ec6,#ff70aa);
     box-shadow:0 4px 0 #cc5a8a, 0 6px 18px rgba(255,100,160,.38); }
   #decorBtn:active { transform:translateY(3px); box-shadow:0 1px 0 #cc5a8a; }
-  #decorDoneBtn { position:fixed; bottom:calc(16px + env(safe-area-inset-bottom)); right:16px;
-    z-index:220; pointer-events:auto; }
+  #decorDoneBtn { position:fixed; bottom:calc(16px + env(safe-area-inset-bottom)); left:50%;
+    transform:translateX(-50%); z-index:220; pointer-events:auto;
+    padding:11px 30px; border-radius:22px; border:none; cursor:pointer;
+    font:700 15px "Baloo 2","BloomEmoji",system-ui,sans-serif; color:#fff;
+    background:linear-gradient(180deg,#6ecb7d,#48b05f);
+    box-shadow:0 4px 0 #2d8a44, 0 6px 18px rgba(70,180,100,.38); }
+  #decorDoneBtn:active { transform:translateX(-50%) translateY(3px); box-shadow:0 1px 0 #2d8a44; }
   #decorRotateBtn { position:fixed; bottom:calc(16px + env(safe-area-inset-bottom)); left:16px;
     z-index:220; pointer-events:auto; padding:11px 20px; border-radius:22px; border:none; cursor:pointer;
     font:700 15px "Baloo 2","BloomEmoji",system-ui,sans-serif; color:#fff;

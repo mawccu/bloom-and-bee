@@ -869,17 +869,6 @@ export function gameplay(dt) {
     }
   }
 
-  /* --- house proximity --- */
-  const houseDist = Math.hypot(girl.position.x - OBSTACLES[2].x, girl.position.z - OBSTACLES[2].z);
-  if (houseDist < 4.8 && !S.housePromptVisible) {
-    S.housePromptVisible = true;
-    $('housePrompt').classList.remove('hidden');
-    malekSay('houseNear', "That's your little cottage! 🏠 Go inside and make it your own 💕");
-  } else if (houseDist >= 4.8 && S.housePromptVisible) {
-    S.housePromptVisible = false;
-    $('housePrompt').classList.add('hidden');
-  }
-
   /* --- occasional dev tip --- */
   if (S.gameT > S.nextTipAt) {
     S.nextTipAt = S.gameT + rand(16, 26);

@@ -4,11 +4,10 @@ import { scene } from './engine.js';
 
 /* ============================== meadow world ============================== */
 export const FIELD_R = 44;
-// no-walk / no-spawn zones: ponds (ellipses) + cottage (circle)
+// no-walk / no-spawn zones: ponds (ellipses)
 export const OBSTACLES = [
   { x: 20, z: -16, rx: 7, rz: 5, pond: true },
   { x: -24, z: -22, rx: 4.5, rz: 3.5, pond: true },
-  { x: -26, z: 20, rx: 3.4, rz: 3.4, pond: false },
 ];
 export function inObstacle(x, z, pad = 1.12) {
   for (const o of OBSTACLES) {
@@ -103,50 +102,6 @@ export const duck = (() => {
   scene.add(g);
   return g;
 })();
-
-// Ranooma's cottage 🏡
-{
-  const o = OBSTACLES[2];
-  const c = new THREE.Group();
-  const base = new THREE.Mesh(new THREE.BoxGeometry(4.2, 2.6, 3.6), lam(0xfff0dc));
-  base.position.y = 1.3; c.add(base);
-  const roof = new THREE.Mesh(new THREE.ConeGeometry(3.4, 2.2, 4), lam(0xff9ec6));
-  roof.position.y = 3.7; roof.rotation.y = Math.PI / 4; c.add(roof);
-  const chimney = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.1, 0.5), lam(0xd8a07a));
-  chimney.position.set(1.1, 4.1, 0.5); c.add(chimney);
-  const door = new THREE.Mesh(new THREE.BoxGeometry(0.95, 1.6, 0.12), lam(0xb97a4e));
-  door.position.set(0, 0.8, 1.81); c.add(door);
-  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 5), lam(0xffd24a));
-  knob.position.set(0.3, 0.8, 1.9); c.add(knob);
-  [-1.3, 1.3].forEach(x => {
-    const frame = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.85, 0.1), lam(0xffffff));
-    frame.position.set(x, 1.55, 1.82); c.add(frame);
-    const glass = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.65, 0.12), lam(0xafe0f5));
-    glass.position.set(x, 1.55, 1.83); c.add(glass);
-  });
-  // window flower boxes
-  [-1.3, 1.3].forEach(x => {
-    const box = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.18, 0.22), lam(0xb97a4e));
-    box.position.set(x, 1.05, 1.9); c.add(box);
-    for (let i = -1; i <= 1; i++) {
-      const fl = new THREE.Mesh(new THREE.SphereGeometry(0.09, 6, 5), lam(choice([0xff8fb7, 0xffd24a, 0xc9a0ff])));
-      fl.position.set(x + i * 0.26, 1.2, 1.92); c.add(fl);
-    }
-  });
-  c.position.set(o.x, 0, o.z);
-  c.lookAt(0, 0, 0);
-  scene.add(c);
-  // stepping stones toward the meadow
-  for (let i = 1; i <= 4; i++) {
-    const st = new THREE.Mesh(new THREE.CircleGeometry(0.42, 10), lam(0xcfd4dc));
-    st.rotation.x = -Math.PI / 2;
-    const t = i / 4;
-    st.position.set(o.x * (1 - t) + o.x * 0.5 * t - t * 2, 0.02, o.z * (1 - t) + o.z * 0.5 * t);
-    st.position.x = o.x - (o.x / Math.hypot(o.x, o.z)) * (3.6 + i * 1.1);
-    st.position.z = o.z - (o.z / Math.hypot(o.x, o.z)) * (3.6 + i * 1.1);
-    scene.add(st);
-  }
-}
 
 // tulip garden patch (decorative)
 {

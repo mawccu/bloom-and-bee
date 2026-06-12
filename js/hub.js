@@ -21,11 +21,16 @@ const SHOP_R = 9;
 const WALK_SPEED = 7;
 const O = HUB_ORIGIN;
 
+/* SVG icon helpers for hub prompt labels (no emoji — consistent with Phase 6 icon pass) */
+const _svgLeaf  = `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="flex-shrink:0"><path d="M17 8C8 10 5.9 16.17 3.82 21.34L5.71 22l1-2.3A4.49 4.49 0 008 20C19 20 22 3 22 3c-1 2-8 2-11 5"/></svg>`;
+const _svgBag   = `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="flex-shrink:0"><path d="M19 6h-2c0-2.76-2.24-5-5-5S7 3.24 7 6H5c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-7-3c1.66 0 3 1.34 3 3H9c0-1.66 1.34-3 3-3zm7 17H5V8h14v12z"/></svg>`;
+const _svgHome  = `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="flex-shrink:0"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>`;
+
 // the three entrances (world coords); buildings sit to the north, she spawns south
 const BUILDINGS = [
-  { key: 'meadow', label: '🌼 Enter the Meadow', x: O.x - 11, z: O.z - 8 },
-  { key: 'shop',   label: '🛍️ Enter the Shop',   x: O.x,      z: O.z - 13 },
-  { key: 'house',  label: '🏠 Enter the House',  x: O.x + 11, z: O.z - 8 },
+  { key: 'meadow', label: _svgLeaf + ' Enter the Garden', x: O.x - 11, z: O.z - 8 },
+  { key: 'shop',   label: _svgBag  + ' Enter the Shop',   x: O.x,      z: O.z - 13 },
+  { key: 'house',  label: _svgHome + ' Enter the House',  x: O.x + 11, z: O.z - 8 },
 ];
 const HOUSE = BUILDINGS[2];
 
@@ -221,7 +226,7 @@ function buildMeadowGate(G, b) {
   });
   for (let i = 0; i < 5; i++) makeFlowers(G, b.x - 1.4 + i * 0.7, b.z - 1.5, 3);
   makeBeacon(G, 0x6ecb7d, b.x, 7.8, b.z);
-  makeFloatingLabel(G, '🌼  The Meadow', 0x6ecb7d, b.x, 7.0, b.z);
+  makeFloatingLabel(G, 'The Garden', 0x6ecb7d, b.x, 7.0, b.z);
 }
 
 function buildShopFront(G, b) {
@@ -248,11 +253,10 @@ function buildShopFront(G, b) {
     glass.position.set(b.x + x, 2.2, b.z + 2.13); G.add(glass);
   });
   makeBeacon(G, 0x5aa8f0, b.x, 6.2, b.z);
-  makeFloatingLabel(G, '🛍️  The Shop', 0x5aa8f0, b.x, 5.5, b.z);
+  makeFloatingLabel(G, 'The Shop', 0x5aa8f0, b.x, 5.5, b.z);
 }
 
 function buildCottage(G, b) {
-  // bigger cottage — 4.8 wide × 3.2 tall × 4.2 deep
   const base = new THREE.Mesh(new THREE.BoxGeometry(4.8, 3.2, 4.2), lam(0xfff0dc));
   base.position.set(b.x, 1.6, b.z); G.add(base);
   const roof = new THREE.Mesh(new THREE.ConeGeometry(3.6, 2.6, 4), lam(0xff9ec6));
@@ -261,14 +265,12 @@ function buildCottage(G, b) {
   chimney.position.set(b.x + 1.2, 5.2, b.z - 0.4); G.add(chimney);
   const chimTop = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.22, 0.85), lam(0xb87a5a));
   chimTop.position.set(b.x + 1.2, 5.95, b.z - 0.4); G.add(chimTop);
-  // door
   const door = new THREE.Mesh(new THREE.BoxGeometry(1.4, 2.4, 0.14), lam(0xb97a4e));
   door.position.set(b.x, 1.2, b.z + 2.11); G.add(door);
   const arch = new THREE.Mesh(new THREE.SphereGeometry(0.7, 8, 5, 0, Math.PI), lam(0xd49a66));
   arch.rotation.z = Math.PI; arch.position.set(b.x, 2.4, b.z + 2.11); G.add(arch);
   const knob = new THREE.Mesh(new THREE.SphereGeometry(0.1, 6, 5), lam(0xffd24a));
   knob.position.set(b.x + 0.45, 1.3, b.z + 2.18); G.add(knob);
-  // windows with flower boxes
   [-1.55, 1.55].forEach(x => {
     const frame = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.1, 0.12), lam(0xffffff));
     frame.position.set(b.x + x, 2.3, b.z + 2.12); G.add(frame);
@@ -282,8 +284,9 @@ function buildCottage(G, b) {
     }
   });
   makeBeacon(G, 0xff9ec6, b.x, 8.2, b.z);
-  makeFloatingLabel(G, '🏠  Ranooma\'s House', 0xff9ec6, b.x, 7.5, b.z);
+  makeFloatingLabel(G, "Ranooma's House", 0xff9ec6, b.x, 7.5, b.z);
 }
+
 buildHub();
 
 /* ---------- shop room interior ---------- */
@@ -422,7 +425,7 @@ function hubProximity() {
   if (near) {
     if (S.hubTarget !== near.key) {
       S.hubTarget = near.key;
-      $('hubPrompt').textContent = near.label;
+      $('hubPrompt').innerHTML = near.label;
       $('hubPrompt').classList.remove('hidden');
     }
   } else if (S.hubTarget) {
@@ -529,7 +532,6 @@ $('hubPrompt').addEventListener('pointerdown', e => {
   if (t === 'meadow') { fadeTransition(() => startGame(S.savedLevel, true)); }
   else if (t === 'shop') { fadeTransition(() => enterShop()); }
   else if (t === 'house') {
-    // a real walk-in: she steps to the cottage door while the screen fades, then she's inside
     S.autoWalk = { x: HOUSE.x, z: HOUSE.z + 1.4 };
     sfx.click();
     fadeTransition(() => { S.autoWalk = null; enterHouseInterior(); });
