@@ -2,7 +2,7 @@ import { $ } from './utils.js';
 import { S } from './state.js';
 import { girl, malekChar, malekRestArms } from './characters.js';
 import { sfx } from './audio.js';
-import { CATALOG, canAfford, buy } from './economy.js';
+import { CATALOG, canAfford, buy, EXCHANGE_RATE, exchangePetalsForCoins, maxExchangeableCoins } from './economy.js';
 import { scheduleCloudSave } from './ui.js';
 
 /* ============================== shop NPC constants ==============================
@@ -76,7 +76,7 @@ function buildCatalogGrid() {
         scheduleCloudSave();
         buildCatalogGrid();
         updateCatalogBal();
-        showPurchaseFeedback(item.name);
+        showFeedback(`✅ ${item.name} purchased!`);
         sfx.click();
       });
     }
@@ -84,18 +84,61 @@ function buildCatalogGrid() {
   }
 }
 
-function showPurchaseFeedback(name) {
+function showFeedback(msg) {
   const el = $('shopPurchaseFeedback');
-  el.textContent = `✅ ${name} purchased!`;
+  el.textContent = msg;
   el.classList.remove('hidden');
   clearTimeout(el._bbTimer);
   el._bbTimer = setTimeout(() => el.classList.add('hidden'), 2200);
+}
+
+/* ============================== petals → coins exchange UI ==============================
+   Injected into the existing shop modal (no markup changes) so she can turn farmed
+   petals into the coins that buy premium pieces. */
+function doExchange(coins) {
+  const want = coins === 'max' ? maxExchangeableCoins() : coins;
+  if (exchangePetalsForCoins(want)) {
+    sfx.click();
+    scheduleCloudSave();
+    updateCatalogBal();
+    buildCatalogGrid();   // refresh what she can now afford
+    showFeedback(`✅ Exchanged ${want * EXCHANGE_RATE}🌸 → ${want}🪙`);
+  } else {
+    showFeedback(`Need ${EXCHANGE_RATE}🌸 per 🪙 — keep picking flowers! 🌸`);
+  }
+}
+
+function buildExchangeUI() {
+  if ($('shopExchange')) return;   // build once, persists in the modal
+  const wrap = document.createElement('div');
+  wrap.id = 'shopExchange';
+  wrap.style.cssText = 'display:flex;flex-direction:column;gap:6px;align-items:center;margin:2px 0 6px;padding:8px 10px;background:rgba(255,240,205,.6);border-radius:14px;';
+  const title = document.createElement('div');
+  title.style.cssText = 'font-weight:800;font-size:13px;color:#7a4f6d;';
+  title.textContent = `💱 Exchange  ${EXCHANGE_RATE}🌸 → 1🪙`;
+  wrap.appendChild(title);
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;justify-content:center;';
+  const mkBtn = (label, fn) => {
+    const b = document.createElement('button');
+    b.className = 'btn alt';
+    b.style.cssText = 'font-size:13px;padding:6px 12px;margin:0;';
+    b.textContent = label;
+    b.addEventListener('pointerdown', ev => { ev.preventDefault(); fn(); });
+    return b;
+  };
+  row.appendChild(mkBtn('+1 🪙', () => doExchange(1)));
+  row.appendChild(mkBtn('+5 🪙', () => doExchange(5)));
+  row.appendChild(mkBtn('Max 🪙', () => doExchange('max')));
+  wrap.appendChild(row);
+  $('shopCatalogBal').insertAdjacentElement('afterend', wrap);
 }
 
 /* ============================== button wiring ============================== */
 $('browseStoreBtn').addEventListener('pointerdown', e => {
   e.preventDefault();
   sfx.click();
+  buildExchangeUI();
   buildCatalogGrid();
   updateCatalogBal();
   $('shopCatalog').classList.remove('hidden');
