@@ -175,10 +175,19 @@ function buildHub() {
   const top = new THREE.Mesh(new THREE.SphereGeometry(0.32, 10, 8), bas(0xbfeaf5, { transparent: true, opacity: 0.85 }));
   top.position.set(O.x, 1.7, O.z); G.add(top);
 
-  // paths from the plaza to each entrance, with lamp posts along them
+  // paths from the plaza to each entrance, with a lamp post beside each.
+  // Each path leaves the plaza RIM along its own heading (not the shared fountain
+  // centre) so the three routes fan out as clearly separate strips instead of
+  // bunching into one overlapping wedge at the middle.
+  const PLAZA_RIM = 3.4;
   BUILDINGS.forEach(b => {
-    makePath(G, O.x, O.z, b.x, b.z + 1.6);
-    makeLamp(G, (O.x + b.x) / 2 + (b.x > O.x ? 1.4 : b.x < O.x ? -1.4 : 1.4), (O.z + b.z) / 2);
+    const ex = b.x, ez = b.z + 1.6;                 // path end, just in front of the building
+    const dx = ex - O.x, dz = ez - O.z, len = Math.hypot(dx, dz) || 1;
+    const ux = dx / len, uz = dz / len;             // unit heading toward the building
+    const sx = O.x + ux * PLAZA_RIM, sz = O.z + uz * PLAZA_RIM;   // start at the plaza rim
+    makePath(G, sx, sz, ex, ez, 1.5);
+    // lamp offset perpendicular to the path so the post sits beside it, not on it
+    makeLamp(G, (sx + ex) / 2 - uz * 1.7, (sz + ez) / 2 + ux * 1.7);
   });
 
   // a low picket fence around the rim
@@ -214,9 +223,11 @@ function buildHub() {
   // Shop — primitive first, then GLB swap
   const primShopGrp = new THREE.Group(); G.add(primShopGrp);
   buildShopFront(primShopGrp, BUILDINGS[1]);
-  // Shop label/beacon live on G directly so they survive the GLB swap
-  makeBeacon(G, 0x5aa8f0, BUILDINGS[1].x, 6.2, BUILDINGS[1].z);
-  makeFloatingLabel(G, 'The Shop', 0x5aa8f0, BUILDINGS[1].x, 5.5, BUILDINGS[1].z);
+  // Shop label/beacon live on G directly so they survive the GLB swap.
+  // Heights match the other buildings (garden 9.2/8.2, house 8.2/7.5) so the sign
+  // floats clearly above the shop roof / GLB instead of being hidden inside it.
+  makeBeacon(G, 0x5aa8f0, BUILDINGS[1].x, 8.4, BUILDINGS[1].z);
+  makeFloatingLabel(G, 'The Shop', 0x5aa8f0, BUILDINGS[1].x, 7.6, BUILDINGS[1].z);
   // House — primitive only
   buildCottage(G, BUILDINGS[2]);
 
