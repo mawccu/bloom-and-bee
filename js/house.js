@@ -92,8 +92,8 @@ function buildInterior() {
   rugBorder.position.set(0,0.01,0.5); G.add(rugBorder);
   intItems.push({ mesh: rugMesh, label: 'rug', lines: intMalekLines.rug, mats: rugMats, storeKey: 'intRug', idx: +store.get('intRug',0)||0 });
 
-  // BED (right side, against wall)
-  const bedG = new THREE.Group(); bedG.position.set(5.0,0,1.5); G.add(bedG);
+  // BED (back-right corner, headboard to the back wall)
+  const bedG = new THREE.Group(); bedG.position.set(4.8,0,-4.3); G.add(bedG);
   bedG.add(function(){ const m=new THREE.Mesh(new THREE.BoxGeometry(2.6,0.35,4.0),lam(0xc8935a)); m.position.y=0.175; return m; }());
   bedG.add(function(){ const m=new THREE.Mesh(new THREE.BoxGeometry(2.6,0.08,0.5),lam(0xc8935a)); m.position.set(0,0.44,1.9); return m; }());
   const coverMats = INT_BED_COLORS.map(c => lam(c));
@@ -110,8 +110,8 @@ function buildInterior() {
   const sideL = new THREE.Mesh(new THREE.SphereGeometry(0.12,8,6), bas(0xffe8b0,{transparent:true,opacity:0.9})); sideL.position.set(-1.7,0.9,1.7); bedG.add(sideL);
   intItems.push({ mesh: coverMesh, label: 'bed', lines: intMalekLines.bed, mats: coverMats, storeKey: 'intBed', idx: +store.get('intBed',0)||0 });
 
-  // DESK + LAPTOP (left side, more room)
-  const deskG = new THREE.Group(); deskG.position.set(-5.0,0,-3.0); G.add(deskG);
+  // DESK + LAPTOP (back-left corner, against the back wall)
+  const deskG = new THREE.Group(); deskG.position.set(-4.8,0,-5.0); G.add(deskG);
   deskG.add(function(){ const m=new THREE.Mesh(new THREE.BoxGeometry(3.0,0.12,1.4),lam(0xa06840)); m.position.y=0.95; return m; }());
   [-1.3,1.3].forEach(x=>{ const leg=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.95,0.12),lam(0x9a6030)); leg.position.set(x,0.475,0); deskG.add(leg); });
   const lapBase = new THREE.Mesh(new THREE.BoxGeometry(1.3,0.08,0.95), lam(0x5a6070)); lapBase.position.set(0,1.06,0.05); deskG.add(lapBase);
@@ -124,16 +124,16 @@ function buildInterior() {
   [-0.4,0.4].forEach(x=>{ [-0.4,0.4].forEach(z=>{ const l=new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.04,0.58,6),lam(0xa06840)); l.position.set(x,0.29,z); chairG.add(l); }); });
   intItems.push({ mesh: screenGlo, label: 'desk', lines: intMalekLines.desk, mats: null, storeKey: null, idx: 0 });
 
-  // BOOKSHELF (back left corner, taller)
-  const shelfG = new THREE.Group(); shelfG.position.set(-6.0,0,-5.5); G.add(shelfG);
+  // BOOKSHELF (left wall, mid — deterministic, tidy rows of books)
+  const shelfG = new THREE.Group(); shelfG.position.set(-6.4,0,1.8); G.add(shelfG);
   shelfG.add(function(){ const m=new THREE.Mesh(new THREE.BoxGeometry(2.2,3.6,0.55),lam(0xb87340)); m.position.y=1.8; return m; }());
   for (let row = 0; row < 4; row++) {
-    let bx = -0.88;
+    let bx = -0.84;
     for (let b = 0; b < 7; b++) {
-      const bh = 0.34 + Math.random()*0.14;
-      const bk = new THREE.Mesh(new THREE.BoxGeometry(0.17, bh, 0.38), lam(INT_BOOK_COLORS[b % INT_BOOK_COLORS.length]));
+      const bh = 0.34 + ((row + b) % 3) * 0.05;   // fixed, repeatable heights
+      const bk = new THREE.Mesh(new THREE.BoxGeometry(0.17, bh, 0.38), lam(INT_BOOK_COLORS[(row * 7 + b) % INT_BOOK_COLORS.length]));
       bk.position.set(bx, 0.45 + row*0.82 + bh/2, 0.09); shelfG.add(bk);
-      bx += 0.2 + Math.random()*0.04;
+      bx += 0.235;
     }
     const shelf = new THREE.Mesh(new THREE.BoxGeometry(2.1,0.07,0.48), lam(0xa06238)); shelf.position.set(0, 0.38+row*0.82, 0.03); shelfG.add(shelf);
   }
@@ -150,8 +150,8 @@ function buildInterior() {
   const vaseStem = new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.22,6), lam(0x5cba6a)); vaseStem.position.set(0,0.38,0); vaseG.add(vaseStem);
   intItems.push({ mesh: vaseFl, label: 'vase', lines: intMalekLines.vase, mats: vaseMats, storeKey: 'intVase', idx: +store.get('intVase',0)||0 });
 
-  // Floor lamp (right back corner)
-  const lampG = new THREE.Group(); lampG.position.set(5.5,0,-5.5); G.add(lampG);
+  // Floor lamp (front-left corner)
+  const lampG = new THREE.Group(); lampG.position.set(-5.8,0,4.6); G.add(lampG);
   lampG.add(function(){ const m=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.09,1.8,8),lam(0xb06a30)); m.position.y=0.9; return m; }());
   lampG.add(function(){ const m=new THREE.Mesh(new THREE.ConeGeometry(0.32,0.38,12,1,true),lam(0xffd24a,{side:THREE.DoubleSide})); m.position.y=1.95; return m; }());
   const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.12,8,6), bas(0xffe8b0,{transparent:true,opacity:0.9})); bulb.position.set(0,1.78,0); lampG.add(bulb);
@@ -213,10 +213,13 @@ export function enterHouse() { initAudio(); sfx.click(); fadeTransition(() => en
 
 // walk to the door, fade, and step back out into the hub
 export function exitHouse() {
+  // leave decor mode FIRST — exitDecorMode re-shows decorBtn, so hide everything after it
+  if (isDecorMode()) exitDecorMode();
   $('exitHouseBtn').classList.add('hidden');
   $('interiorHint').classList.add('hidden');
   $('decorBtn').classList.add('hidden');
-  if (isDecorMode()) exitDecorMode();
+  $('decorPanel').classList.add('hidden');
+  $('decorDoneBtn').classList.add('hidden');
   sfx.click();
   malekSay('houseOut', "Back to the hub! Where to next? 🌸");
   S.autoWalk = { x: INT_ORIGIN.x, z: INT_ORIGIN.z + 8.5 };

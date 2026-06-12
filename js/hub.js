@@ -8,6 +8,7 @@ import { inputVec, hideJoy, showFixedJoy } from './input.js';
 import { startGame, camFocus } from './gameplay.js';
 import { enterHouseInterior } from './house.js';
 import { onEnterShop, onExitShop, updateShopProximity } from './shop.js';
+import { SHOP_OBSTACLES, HOUSE_OBSTACLES, resolveObstacles } from './world.js';
 
 /* ============================== overworld hub ==============================
    A cute little walkable town square (far from the meadow at origin, the house
@@ -77,18 +78,18 @@ function makePath(G, x1, z1, x2, z2, w = 1.7) {
 }
 /* -------- 3-D floating canvas-sprite name label -------- */
 const floatingLabels = [];
-function makeFloatingLabel(G, text, color, x, baseY, z, centerText = false) {
-  const W = 480, H = 96;
+function makeFloatingLabel(G, text, color, x, baseY, z) {
+  const W = 480, H = 96, PAD = 8, STRIPE = 16;
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
   const ctx = cv.getContext('2d');
   // pill background
   ctx.shadowColor = 'rgba(160,90,140,0.38)'; ctx.shadowBlur = 18;
   ctx.fillStyle = 'rgba(255,255,255,0.97)';
-  ctx.beginPath(); ctx.roundRect(8, 8, W - 16, H - 16, 26); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(PAD, PAD, W - 2 * PAD, H - 2 * PAD, 26); ctx.fill();
   ctx.shadowBlur = 0;
   // colour top stripe
   ctx.fillStyle = '#' + color.toString(16).padStart(6, '0');
-  ctx.beginPath(); ctx.roundRect(8, 8, W - 16, 16, [26, 26, 0, 0]); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(PAD, PAD, W - 2 * PAD, STRIPE, [26, 26, 0, 0]); ctx.fill();
   // auto-fit text so nothing clips
   let fs = 38;
   ctx.font = `bold ${fs}px "Baloo 2", system-ui, sans-serif`;
@@ -98,7 +99,8 @@ function makeFloatingLabel(G, text, color, x, baseY, z, centerText = false) {
   }
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#6d3f62';
-  ctx.fillText(text, W / 2, centerText ? H / 2 : H / 2 + 9);
+  // dead-centre (both axes) of the white panel below the colour stripe
+  ctx.fillText(text, W / 2, (PAD + STRIPE + (H - PAD)) / 2);
   const tex = new THREE.CanvasTexture(cv);
   const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, fog: false });
   const sprite = new THREE.Sprite(mat);
@@ -233,7 +235,7 @@ function buildShopFront(G, b) {
     glass.position.set(b.x + x, 2.2, b.z + 2.13); G.add(glass);
   });
   makeBeacon(G, 0x5aa8f0, b.x, 6.2, b.z);
-  makeFloatingLabel(G, '🛍️  The Shop', 0x5aa8f0, b.x, 5.5, b.z, true);
+  makeFloatingLabel(G, '🛍️  The Shop', 0x5aa8f0, b.x, 5.5, b.z);
 }
 
 function buildCottage(G, b) {
@@ -376,7 +378,7 @@ function buildShopRoom() {
 buildShopRoom();
 
 /* ---------- walking + proximity ---------- */
-function walkWorld(dt, cx, cz, R) {
+function walkWorld(dt, cx, cz, R, obstacles) {
   let ix, iy;
   if (S.autoWalk) {
     const dx = S.autoWalk.x - girl.position.x, dz = S.autoWalk.z - girl.position.z, d = Math.hypot(dx, dz);
@@ -392,6 +394,7 @@ function walkWorld(dt, cx, cz, R) {
     girl.position.z += iy * WALK_SPEED * dt;
     const dx = girl.position.x - cx, dz = girl.position.z - cz, r = Math.hypot(dx, dz);
     if (r > R) { girl.position.x = cx + dx / r * R; girl.position.z = cz + dz / r * R; }
+    resolveObstacles(girl.position, obstacles);   // solid furniture: she stops / slides
     girl.rotation.y = lerpAngle(girl.rotation.y, Math.atan2(ix, iy), 1 - Math.exp(-12 * dt));
     S.walkT += dt * (4 + 6 * Math.min(ilen, 1));
   }
@@ -418,8 +421,8 @@ function hubProximity() {
 // called from the main loop while in 'hub' / 'shop' / 'house'
 export function updateOverworld(dt) {
   if (S.state === 'hub') { walkWorld(dt, O.x, O.z, HUB_R); hubProximity(); }
-  else if (S.state === 'shop') { walkWorld(dt, SHOP_ORIGIN.x, SHOP_ORIGIN.z, SHOP_R); updateShopProximity(); }
-  else if (S.state === 'house') { const wc = S.walkCenter; if (wc) walkWorld(dt, wc.x, wc.z, S.walkR || 3.4); }
+  else if (S.state === 'shop') { walkWorld(dt, SHOP_ORIGIN.x, SHOP_ORIGIN.z, SHOP_R, SHOP_OBSTACLES); updateShopProximity(); }
+  else if (S.state === 'house') { const wc = S.walkCenter; if (wc) walkWorld(dt, wc.x, wc.z, S.walkR || 3.4, HOUSE_OBSTACLES); }
   // ambient: spinning beacons + floating label bob + shimmering fountain
   for (const bc of beacons) {
     bc.rotation.y += dt * 1.6;
@@ -446,7 +449,8 @@ export function fadeTransition(midFn, ms = 380) {
 /* ---------- transitions ---------- */
 function hideMeadowHud() {
   ['hud', 'mini', 'swatBtn', 'sprintBtn', 'stamWrap', 'kissBtn', 'hint',
-   'housePrompt', 'exitHouseBtn', 'interiorHint'].forEach(id => $(id).classList.add('hidden'));
+   'housePrompt', 'exitHouseBtn', 'interiorHint',
+   'decorBtn', 'decorPanel', 'decorDoneBtn'].forEach(id => $(id).classList.add('hidden'));
 }
 function hideScreens() {
   ['titleScreen', 'levelScreen', 'overScreen', 'pauseScreen', 'malekWin', 'saveModal']
@@ -484,6 +488,7 @@ export function enterShop() {
   camFocus.copy(girl.position);
   $('hubPrompt').classList.add('hidden'); S.hubTarget = null;
   $('hud2').classList.remove('hidden');
+  ['decorBtn', 'decorPanel', 'decorDoneBtn'].forEach(id => $(id).classList.add('hidden'));
   $('exitBuildingBtn').classList.remove('hidden');
   hideJoy();
   if (S.ctrlMode === 'fixed') showFixedJoy();

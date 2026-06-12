@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { clamp, $ } from './utils.js';
 import { S } from './state.js';
 import { renderer, camera } from './engine.js';
-import { FIELD_R, inObstacle, pushOut } from './world.js';
+import { FIELD_R, inObstacle, pushOut, SHOP_OBSTACLES, HOUSE_OBSTACLES, resolveObstacles } from './world.js';
 import { girl } from './characters.js';
 import { initAudio } from './audio.js';
 import { tapMarker, doSwat, blowKiss } from './gameplay.js';
@@ -38,6 +38,10 @@ function setTapTarget(e) {
   if (S.state === 'playing') {
     const ob = inObstacle(x, z);
     if (ob) { const pos = { x, z }; pushOut(pos, ob); x = pos.x; z = pos.z; }
+  } else if (S.state === 'shop' || S.state === 'house') {
+    const pos = { x, z };
+    resolveObstacles(pos, S.state === 'shop' ? SHOP_OBSTACLES : HOUSE_OBSTACLES);
+    x = pos.x; z = pos.z;
   }
   S.tapTarget = { x, z };
   tapMarker.position.set(x, 0.06, z);

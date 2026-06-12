@@ -24,6 +24,35 @@ export function pushOut(pos, o, pad = 1.13) {
   pos.z = o.z + dz / d * o.rz * pad;
 }
 
+/* ---------- interior furniture collision ----------
+   Solid ellipse footprints (WORLD coords) for the shop room (SHOP_ORIGIN =
+   -300,0,220) and the house interior (INT_ORIGIN = 0,0,300). She slides along /
+   is stopped by these just like the meadow ponds. Keep in sync with the meshes
+   built in hub.js (buildShopRoom) and house.js (buildInterior). */
+export const SHOP_OBSTACLES = [
+  { x: -300,    z: 214,   rx: 4.3, rz: 1.3 },  // counter + top slab
+  { x: -300,    z: 212.5, rx: 1.0, rz: 1.0 },  // Malek the shopkeeper
+  { x: -308.35, z: 218.5, rx: 0.9, rz: 4.7 },  // left shelf unit
+  { x: -291.65, z: 218.5, rx: 0.9, rz: 4.7 },  // right shelf unit
+];
+export const HOUSE_OBSTACLES = [
+  { x:  4.8, z: 295.7, rx: 1.6, rz: 2.4 },  // bed (back-right corner)
+  { x: -4.8, z: 295.4, rx: 1.7, rz: 1.4 },  // desk + chair (back-left corner)
+  { x: -6.4, z: 301.8, rx: 1.2, rz: 0.7 },  // bookshelf (left wall)
+];
+
+// push pos out of every furniture ellipse it overlaps (a couple of passes so
+// she resolves cleanly even when wedged between two pieces)
+export function resolveObstacles(pos, list) {
+  if (!list) return;
+  for (let pass = 0; pass < 2; pass++) {
+    for (const o of list) {
+      const dx = (pos.x - o.x) / o.rx, dz = (pos.z - o.z) / o.rz;
+      if (dx * dx + dz * dz < 1) pushOut(pos, o, 1.001);
+    }
+  }
+}
+
 scene.add(new THREE.Mesh(new THREE.CircleGeometry(130, 48), lam(0x93d483)).rotateX(-Math.PI / 2));
 const playDisc = new THREE.Mesh(new THREE.CircleGeometry(FIELD_R + 2.5, 64), lam(0xa9e394));
 playDisc.rotation.x = -Math.PI / 2; playDisc.position.y = 0.01;

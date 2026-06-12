@@ -10,19 +10,20 @@ import { malekSay } from './characters.js';
 import { scheduleCloudSave } from './ui.js';
 
 /* ============================== slot grid ==============================
-   8 named floor positions inside the house (INT_ORIGIN = 0,0,300).
-   All world coords = (INT_OX + slot.lx, 0, INT_OZ + slot.lz).          */
+   8 floor positions inside the house (INT_ORIGIN = 0,0,300), laid out as an
+   even 4×2 grid across the open central/front floor (clear of the built-in
+   bed/desk/bookshelf). World coords = (INT_OX + slot.lx, 0, INT_OZ + slot.lz). */
 const INT_OX = 0, INT_OZ = 300;
 
 const SLOTS = [
-  { id: 'center',  lx:  0.0, lz:  0.5  },
-  { id: 'entry_r', lx:  3.2, lz:  5.2  },
-  { id: 'entry_l', lx: -3.2, lz:  5.2  },
-  { id: 'back_r',  lx:  3.0, lz: -2.5  },
-  { id: 'back_l',  lx: -2.5, lz: -1.5  },
-  { id: 'mid_r',   lx:  4.5, lz:  1.5  },
-  { id: 'mid_l',   lx: -1.5, lz:  2.5  },
-  { id: 'win_l',   lx: -2.5, lz: -5.5  },
+  { id: 'g0', lx: -3.6, lz: 1.0 },
+  { id: 'g1', lx: -1.2, lz: 1.0 },
+  { id: 'g2', lx:  1.2, lz: 1.0 },
+  { id: 'g3', lx:  3.6, lz: 1.0 },
+  { id: 'g4', lx: -3.6, lz: 4.0 },
+  { id: 'g5', lx: -1.2, lz: 4.0 },
+  { id: 'g6', lx:  1.2, lz: 4.0 },
+  { id: 'g7', lx:  3.6, lz: 4.0 },
 ];
 
 const slotMarkers  = {};   // slotId → THREE.Mesh
@@ -212,6 +213,10 @@ function despawnMesh(slotId) {
 /* ============================== init (called from house.js) ============================== */
 export function initDecor() {
   SLOTS.forEach(s => makeSlotMarker(s.id, s.lx, s.lz));
+  // drop saved placements that point at retired slot ids (old random layout)
+  Object.keys(S.placedFurniture).forEach(slotId => {
+    if (!SLOTS.some(s => s.id === slotId)) delete S.placedFurniture[slotId];
+  });
   Object.entries(S.placedFurniture).forEach(([slotId, itemId]) => spawnMesh(slotId, itemId));
 }
 
