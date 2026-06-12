@@ -14,7 +14,8 @@ import {
 import { refreshHud, setCtrl, exportSave, importSave } from './ui.js';
 import { updateInteriorCamera } from './house.js';
 import { updateOverworld, enterHub } from './hub.js';
-// input.js / ui.js / house.js are pulled in transitively for their event wiring + scene setup
+// input.js / ui.js / house.js / shop.js are pulled in transitively for their event wiring + scene setup
+import './shop.js';
 
 /* ============================== camera + main loop ============================== */
 function updateCamera(dt) {

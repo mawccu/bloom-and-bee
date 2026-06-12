@@ -40,7 +40,7 @@ export function importSave(code) {
    (offline / blocked) the game is unaffected and just syncs next time a call succeeds. */
 // 'bank' is the one structured value: stored as a JSON string in localStorage but carried
 // in the cloud blob (jsonb) as a real object, so it round-trips as { petals, coins } — not "[object Object]".
-const JSON_KEYS = ['bank'];
+const JSON_KEYS = ['bank', 'ownedItems'];
 const safeParse = v => { try { return JSON.parse(v); } catch (e) { return null; } };
 function getSaveBlob() {
   const data = {};
@@ -56,9 +56,22 @@ function applySaveBlob(data) {
     if (data[k] === undefined) return;
     if (JSON_KEYS.includes(k)) {
       const obj = typeof data[k] === 'string' ? safeParse(data[k]) : data[k];
-      if (obj != null) {
+      if (obj == null) return;
+      if (k === 'bank') {
+        // take the higher of local vs cloud for each currency
+        const local = S.bank;
+        const merged = { petals: Math.max(local.petals, obj.petals || 0), coins: Math.max(local.coins, obj.coins || 0) };
+        store.set(k, JSON.stringify(merged));
+        S.bank = merged;
+      } else if (k === 'ownedItems') {
+        // union: keep everything owned on either side
+        const localArr = Array.isArray(S.ownedItems) ? S.ownedItems : [];
+        const cloudArr = Array.isArray(obj) ? obj : [];
+        const merged = [...new Set([...localArr, ...cloudArr])];
+        store.set(k, JSON.stringify(merged));
+        S.ownedItems = merged;
+      } else {
         store.set(k, JSON.stringify(obj));
-        if (k === 'bank') S.bank = Object.assign({ petals: 0, coins: 0 }, obj);
       }
     } else {
       store.set(k, data[k]);

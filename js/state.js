@@ -1,6 +1,6 @@
 /* ============================== profiles / storage ============================== */
 export const PROFILE_KEY = 'bloombee_profile';
-export const PROFILE_DATA_KEYS = ['best','bestlvl','curlevel','hd','snd','chime','ctrl','dress','hair','intRug','intBed','intVase','bank'];
+export const PROFILE_DATA_KEYS = ['best','bestlvl','curlevel','hd','snd','chime','ctrl','dress','hair','intRug','intBed','intVase','bank','ownedItems'];
 export let profileId = localStorage.getItem(PROFILE_KEY) || '';
 const nsKey = k => profileId ? `bloombee_${profileId}_${k}` : 'bloombee_' + k;
 export const store = {
@@ -51,6 +51,9 @@ export const S = {
 
   // persistent currency bank (survives lost runs; stored as JSON under the 'bank' save key)
   bank: (() => { try { return Object.assign({ petals: 0, coins: 0 }, JSON.parse(store.get('bank', '') || 'null') || {}); } catch (e) { return { petals: 0, coins: 0 }; } })(),
+
+  // owned items (purchased from the shop; stored as JSON array)
+  ownedItems: (() => { try { return JSON.parse(store.get('ownedItems', '[]') || '[]') || []; } catch (e) { return []; } })(),
 
   // game flow
   state: 'menu',

@@ -184,6 +184,46 @@
     font-weight:700; font-size:15px; pointer-events:none;
     animation:hintBob 1.4s ease-in-out infinite; transition:opacity .5s; }
 
+  /* ---------- browse-store proximity button ---------- */
+  #browseStoreBtn { position:fixed; bottom:calc(112px + env(safe-area-inset-bottom)); left:50%;
+    transform:translateX(-50%); z-index:12; pointer-events:auto;
+    background:rgba(255,255,255,.95); border-radius:999px; padding:12px 28px;
+    font-weight:800; font-size:16px; color:#7a4f6d; font-family:inherit;
+    box-shadow:0 5px 0 rgba(160,90,140,.28), 0 8px 22px rgba(160,90,140,.25);
+    border:none; cursor:pointer; animation:hintBob 1.4s ease-in-out infinite; }
+
+  /* ---------- shop catalog modal ---------- */
+  #shopCatalog { position:fixed; inset:0; z-index:35; background:rgba(100,60,130,.72);
+    display:flex; align-items:center; justify-content:center; padding:14px; }
+  #shopCatalog.hidden { display:none !important; }
+  #shopCatalogBox { background:linear-gradient(160deg,#fff8ff 0%,#f0e0ff 100%); border-radius:28px;
+    padding:20px 16px 18px; width:min(420px,96vw); max-height:92vh; overflow-y:auto;
+    box-shadow:0 14px 55px rgba(130,60,190,.38);
+    display:flex; flex-direction:column; gap:10px;
+    animation:winPop .35s cubic-bezier(.18,1.45,.5,1) both; }
+  #shopCatalogHeader { font-size:clamp(22px,6.5vw,30px); font-weight:800; color:#7a4f6d;
+    text-align:center; text-shadow:0 2px 0 #fff; }
+  #shopCatalogBal { text-align:center; font-weight:800; font-size:15px; color:#a06a8c; }
+  #shopCatalogGrid { display:grid; grid-template-columns:repeat(2, minmax(130px, 1fr)); gap:8px; }
+  .shopCatalogCard { background:rgba(255,255,255,.9); border-radius:14px; padding:10px 8px 8px;
+    border:2px solid transparent; cursor:pointer; font-family:inherit;
+    box-shadow:0 3px 10px rgba(180,110,160,.2);
+    display:flex; flex-direction:column; gap:3px; align-items:center;
+    transition:transform .08s, border-color .1s; }
+  .shopCatalogCard:not(.owned):not(.cant):hover { border-color:#ffb0d0; }
+  .shopCatalogCard:not(.owned):not(.cant):active { transform:scale(.95); }
+  .shopCatalogCard.owned { opacity:.65; cursor:default; }
+  .shopCatalogCard.cant  { opacity:.45; cursor:not-allowed; }
+  .shopCatalogCard .sc-em { font-size:26px; line-height:1.2; }
+  .shopCatalogCard .sc-nm { font-weight:800; font-size:13px; color:#7a4f6d; text-align:center; }
+  .shopCatalogCard .sc-ds { font-size:10.5px; color:#b08aa4; font-weight:600; text-align:center; line-height:1.3; }
+  .shopCatalogCard .sc-cost { font-weight:800; font-size:12px; color:#fff;
+    background:linear-gradient(180deg,#ffb464,#f5912e); border-radius:999px;
+    padding:2px 11px; margin-top:2px; white-space:nowrap; }
+  .shopCatalogCard.owned .sc-cost { background:linear-gradient(180deg,#b8e6a0,#7ec25e); }
+  #shopPurchaseFeedback { text-align:center; font-weight:800; font-size:14px; color:#3a8c44;
+    background:rgba(76,175,80,.12); border-radius:12px; padding:8px 12px; }
+
   /* ---------- malek win overlay ---------- */
   #malekWin { position:fixed; inset:0; z-index:40; background:rgba(100,60,130,.55);
     display:flex; align-items:center; justify-content:center; padding:18px; }

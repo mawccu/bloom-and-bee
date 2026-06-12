@@ -7,6 +7,7 @@ import { sfx, initAudio } from './audio.js';
 import { inputVec, hideJoy, showFixedJoy } from './input.js';
 import { startGame, camFocus } from './gameplay.js';
 import { enterHouseInterior } from './house.js';
+import { onEnterShop, onExitShop, updateShopProximity } from './shop.js';
 
 /* ============================== overworld hub ==============================
    A cute little walkable town square (far from the meadow at origin, the house
@@ -284,7 +285,7 @@ function hubProximity() {
 // called from the main loop while in 'hub' / 'shop' / 'house'
 export function updateOverworld(dt) {
   if (S.state === 'hub') { walkWorld(dt, O.x, O.z, HUB_R); hubProximity(); }
-  else if (S.state === 'shop') { walkWorld(dt, SHOP_ORIGIN.x, SHOP_ORIGIN.z, SHOP_R); }
+  else if (S.state === 'shop') { walkWorld(dt, SHOP_ORIGIN.x, SHOP_ORIGIN.z, SHOP_R); updateShopProximity(); }
   else if (S.state === 'house') { const wc = S.walkCenter; if (wc) walkWorld(dt, wc.x, wc.z, S.walkR || 3.4); }
   // ambient: spinning sign beacons + shimmering fountain
   for (const bc of beacons) { bc.rotation.y += dt * 1.5; bc.position.y = 3.5 + Math.sin(S.animT * 2 + bc.position.x) * 0.16; }
@@ -348,9 +349,15 @@ export function enterShop() {
   hideJoy();
   if (S.ctrlMode === 'fixed') showFixedJoy();
   sfx.click();
+  onEnterShop();
 }
 
-export function exitToHub() { $('exitBuildingBtn').classList.add('hidden'); sfx.click(); enterHub(); }
+export function exitToHub() {
+  onExitShop();
+  $('exitBuildingBtn').classList.add('hidden');
+  sfx.click();
+  enterHub();
+}
 
 /* ---------- button wiring ---------- */
 $('hubPrompt').addEventListener('pointerdown', e => {
