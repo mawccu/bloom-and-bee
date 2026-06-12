@@ -30,7 +30,7 @@ function updateCamera(dt) {
 function tick(dt) {
   S.animT += dt;
   if (S.state === 'playing') gameplay(dt);
-  else if (S.state === 'hub' || S.state === 'shop') updateOverworld(dt);
+  else if (S.state === 'hub' || S.state === 'shop' || S.state === 'house') updateOverworld(dt);
   updateMalekUlt(dt); // runs regardless of state so carry/kiss/leave survive the 'won' transition
   cosmetics(dt);
   updateParticles(dt);

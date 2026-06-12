@@ -995,7 +995,7 @@ export function cosmetics(dt) {
       girl.rotation.y += dt * 7;
       girl.position.y = Math.abs(Math.sin(S.winT * 9)) * 0.35;
     } else girl.position.y = 0;
-  } else if (S.moving && (S.state === 'playing' || S.state === 'hub' || S.state === 'shop')) {
+  } else if (S.moving && (S.state === 'playing' || S.state === 'hub' || S.state === 'shop' || S.state === 'house')) {
     const sw = Math.sin(S.walkT * 2.2);
     girlRefs.arms[0].rotation.x = sw * 0.75;
     if (S.swatArmT <= 0) girlRefs.arms[1].rotation.x = -0.55 + sw * 0.12;

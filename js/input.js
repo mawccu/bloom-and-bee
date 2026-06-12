@@ -51,7 +51,7 @@ renderer.domElement.addEventListener('pointerdown', e => {
     if (intDragId === null) { intDragId = e.pointerId; intDragPrevX = e.clientX; }
     return;
   }
-  if (S.state !== 'playing' && S.state !== 'hub' && S.state !== 'shop') return;
+  if (S.state !== 'playing' && S.state !== 'hub' && S.state !== 'shop' && S.state !== 'house') return;
   $('hint').style.opacity = 0;
   if (S.ctrlMode === 'tap') {
     if (tapPointerId === null) { tapPointerId = e.pointerId; setTapTarget(e); }
@@ -83,7 +83,7 @@ addEventListener('pointermove', e => {
   }
   if (e.pointerId === joyId) moveKnob(e);
   else if (S.ctrlMode === 'tap' && e.pointerId === tapPointerId &&
-           (S.state === 'playing' || S.state === 'hub' || S.state === 'shop')) setTapTarget(e);
+           (S.state === 'playing' || S.state === 'hub' || S.state === 'shop' || S.state === 'house')) setTapTarget(e);
 });
 const endPointer = e => {
   if (S.insideHouse) {

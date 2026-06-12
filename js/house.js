@@ -4,10 +4,11 @@ import { store, S } from './state.js';
 import { scene, camera } from './engine.js';
 import { burst } from './particles.js';
 import { sfx, initAudio } from './audio.js';
-import { malekSay } from './characters.js';
-import { raycaster } from './input.js';
+import { malekSay, girl, girlRefs } from './characters.js';
+import { raycaster, showFixedJoy } from './input.js';
 import { scheduleCloudSave } from './ui.js';
-import { enterHub } from './hub.js';
+import { camFocus } from './gameplay.js';
+import { enterHub, fadeTransition } from './hub.js';
 
 /* ============================== house interior ============================== */
 const INT_ORIGIN = new THREE.Vector3(0, 0, 300);
@@ -43,9 +44,7 @@ function buildInterior() {
     p.position.set(i * 1.08, 0, 0); G.add(p);
   }
 
-  // Ceiling
-  const ceil = new THREE.Mesh(new THREE.BoxGeometry(10,0.2,10), lam(0xfff5ec));
-  ceil.position.y = 3.9; G.add(ceil);
+  // (open-topped "dollhouse" room — no ceiling, so the follow camera looks straight in)
 
   // Walls
   const wMat = lam(0xfdf5e2);
@@ -164,32 +163,45 @@ function buildInterior() {
 }
 buildInterior();
 
-export function enterHouse() {
-  S.insideHouse = true;
+const INT_SPAWN = new THREE.Vector3(INT_ORIGIN.x, 0, INT_ORIGIN.z + 3.6); // just inside the doorway
+const INT_R = 3.4;
+
+// the actual swap into the interior (runs under a fade cover). The room is a normal
+// open-top walkable area with the standard follow camera — no orbit, no jitter.
+export function enterHouseInterior() {
+  S.insideHouse = false;
   S.state = 'house';
-  S.intYaw = 0;
-  $('housePrompt').classList.add('hidden');
+  S.autoWalk = null;
+  S.tapTarget = null;
+  S.walkCenter = { x: INT_ORIGIN.x, z: INT_ORIGIN.z }; S.walkR = INT_R;
+  girl.position.copy(INT_SPAWN); girl.rotation.set(0, Math.PI, 0); girl.visible = true;
+  girlRefs.bubble.visible = false;
+  camFocus.copy(girl.position);
   $('hud').classList.add('hidden');
-  $('hud2').classList.add('hidden');
-  $('mini').classList.add('hidden');
-  $('swatBtn').classList.add('hidden');
+  $('mini').classList.add('hidden'); $('swatBtn').classList.add('hidden');
   $('sprintBtn').classList.add('hidden'); $('stamWrap').classList.add('hidden'); S.sprintBtnHeld = false;
-  $('kissBtn').classList.add('hidden');
+  $('kissBtn').classList.add('hidden'); $('hint').classList.add('hidden'); $('housePrompt').classList.add('hidden');
+  $('hud2').classList.remove('hidden');
   $('exitHouseBtn').classList.remove('hidden');
-  $('interiorHint').classList.remove('hidden');
-  $('interiorHint').style.opacity = 1;
-  setTimeout(() => { $('interiorHint').style.opacity = 0; setTimeout(()=>$('interiorHint').classList.add('hidden'),600); }, 3200);
-  malekSay('house', "Welcome to your cozy room! 🏠 I decorated it just for you 💕");
-  sfx.click();
+  $('interiorHint').textContent = 'Walk around your room! ✨';
+  $('interiorHint').classList.remove('hidden'); $('interiorHint').style.opacity = 1;
+  setTimeout(() => { $('interiorHint').style.opacity = 0; setTimeout(() => $('interiorHint').classList.add('hidden'), 600); }, 2600);
+  if (S.ctrlMode === 'fixed') showFixedJoy();
+  malekSay('house', "Welcome to your cozy room! 🏠 walk around — decorating comes soon 💕");
+  S.hudDirty = true;
 }
 
+// entered from the meadow cottage prompt — fade straight in
+export function enterHouse() { initAudio(); sfx.click(); fadeTransition(() => enterHouseInterior()); }
+
+// walk to the door, fade, and step back out into the hub
 export function exitHouse() {
-  S.insideHouse = false;
   $('exitHouseBtn').classList.add('hidden');
   $('interiorHint').classList.add('hidden');
   sfx.click();
   malekSay('houseOut', "Back to the hub! Where to next? 🌸");
-  enterHub();
+  S.autoWalk = { x: INT_ORIGIN.x, z: INT_ORIGIN.z + 4.2 };
+  fadeTransition(() => { S.autoWalk = null; enterHub(); });
 }
 
 export function updateInteriorCamera() {

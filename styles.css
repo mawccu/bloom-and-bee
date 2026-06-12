@@ -54,6 +54,10 @@
   #flash { position:fixed; inset:0; z-index:19; pointer-events:none; background:#fff; opacity:0; }
   #flash.go { animation:flashFade .55s ease-out; }
   @keyframes flashFade { 0%{ opacity:0; } 12%{ opacity:.92; } 100%{ opacity:0; } }
+  /* scene-transition fade (walk-in / walk-out of buildings) */
+  #fade { position:fixed; inset:0; z-index:45; pointer-events:none;
+    background:#241a33; opacity:0; transition:opacity .36s ease; }
+  #fade.show { opacity:1; }
 
   /* ---------- Malek chat ---------- */
   #malek { position:fixed; top:calc(96px + env(safe-area-inset-top)); left:50%; z-index:14;
