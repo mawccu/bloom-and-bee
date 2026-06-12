@@ -28,10 +28,19 @@ const _svgBag   = `<svg viewBox="0 0 24 24" width="16" height="16" fill="current
 const _svgHome  = `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="flex-shrink:0"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>`;
 
 // the three entrances (world coords); buildings sit to the north, she spawns south
+// x-offsets kept to ±7 so all buildings are within the camera FOV from the spawn point
 const BUILDINGS = [
-  { key: 'garden', label: _svgLeaf + ' Enter the Garden',      x: O.x - 11, z: O.z - 8  },
-  { key: 'shop',   label: _svgBag  + ' Enter the Shop',        x: O.x,      z: O.z - 13 },
-  { key: 'house',  label: _svgHome + " Enter Ranooma's House", x: O.x + 11, z: O.z - 8  },
+  { key: 'garden', label: _svgLeaf + ' Enter the Garden',      x: O.x - 7, z: O.z - 9  },
+  { key: 'shop',   label: _svgBag  + ' Enter the Shop',        x: O.x,     z: O.z - 13 },
+  { key: 'house',  label: _svgHome + " Enter Ranooma's House", x: O.x + 7, z: O.z - 9  },
+];
+
+// Solid collision ellipses for hub buildings + fountain — fed into walkWorld so Ranooma can't walk through them
+const HUB_OBSTACLES = [
+  { x: O.x - 7, z: O.z - 9,  rx: 3.2, rz: 1.4 },  // garden gate (thin along Z, wide along X)
+  { x: O.x,     z: O.z - 13, rx: 3.0, rz: 2.6 },  // shop front
+  { x: O.x + 7, z: O.z - 9,  rx: 2.8, rz: 2.6 },  // ranooma's house
+  { x: O.x,     z: O.z,      rx: 1.9, rz: 1.9 },  // fountain basin
 ];
 
 /* ---------- little prop helpers ---------- */
@@ -179,20 +188,21 @@ function buildHub() {
     const px = O.x + Math.cos(a) * (HUB_R + 1.5), pz = O.z + Math.sin(a) * (HUB_R + 1.5);
     // leave a gap on the south side where she spawns
     if (Math.sin(a) > 0.55 && Math.abs(Math.cos(a)) < 0.45) continue;
-    const post = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.9, 0.14), lam(0xf3ead6));
-    post.position.set(px, 0.45, pz); post.rotation.y = a; G.add(post);
-    const cap = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.16, 4), lam(0xffd9ea));
-    cap.position.set(px, 0.98, pz); cap.rotation.y = a; G.add(cap);
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.15, 1.0, 0.15), lam(0xf0ddc8));
+    post.position.set(px, 0.5, pz); post.rotation.y = a; G.add(post);
+    const cap = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.18, 4), lam(0xffc8e0));
+    cap.position.set(px, 1.09, pz); cap.rotation.y = a; G.add(cap);
   }
+  // Fence top rail — a thin torus ring at the top of the posts
+  const fenceRail = new THREE.Mesh(new THREE.TorusGeometry(HUB_R + 1.5, 0.07, 7, 56), lam(0xe8d0b8));
+  fenceRail.rotation.x = -Math.PI / 2; fenceRail.position.set(O.x, 0.72, O.z); G.add(fenceRail);
 
-  // scattered greenery & rocks (kept off the plaza/paths)
-  for (let i = 0; i < 26; i++) {
+  // scattered greenery — no rocks in the cute garden hub, only bushes & flowers
+  for (let i = 0; i < 28; i++) {
     const a = rand(0, Math.PI * 2), r = rand(7, HUB_R - 0.5);
     const px = O.x + Math.cos(a) * r, pz = O.z + Math.sin(a) * r;
-    const roll = Math.random();
-    if (roll < 0.34) makeBush(G, px, pz);
-    else if (roll < 0.62) makeFlowers(G, px, pz, 4 + (Math.random() * 4 | 0));
-    else makeRock(G, px, pz);
+    if (Math.random() < 0.44) makeBush(G, px, pz);
+    else makeFlowers(G, px, pz, 4 + (Math.random() * 4 | 0));
   }
   // perimeter trees
   for (let i = 0; i < 12; i++) {
@@ -200,25 +210,19 @@ function buildHub() {
     makeTree(G, O.x + Math.cos(a) * (HUB_R + 4), O.z + Math.sin(a) * (HUB_R + 4), rand(1.0, 1.6));
   }
 
-  // Primitive fallbacks — show immediately while GLBs load
-  const primGateGrp = new THREE.Group(); G.add(primGateGrp);
-  buildGardenGate(primGateGrp, BUILDINGS[0]);
+  // Garden gate — improved primitive (permanent, no GLB swap)
+  buildGardenGate(G, BUILDINGS[0]);
+  // Shop — primitive first, then GLB swap
   const primShopGrp = new THREE.Group(); G.add(primShopGrp);
   buildShopFront(primShopGrp, BUILDINGS[1]);
+  // House — primitive only
   buildCottage(G, BUILDINGS[2]);
 
   G.traverse(c => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
 
-  // Progressive GLB upgrades — swap in when loaded
-  const b0 = BUILDINGS[0], b1 = BUILDINGS[1];
-  loadModel('garden_gate.glb').then(m => {
-    m.position.set(b0.x, 0, b0.z);
-    m.traverse(c => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
-    G.remove(primGateGrp); G.add(m);
-  }).catch(() => {});
-
+  // Progressive GLB upgrade for shop only
   loadModel('shop_front.glb').then(m => {
-    m.position.set(b1.x, 0, b1.z);
+    m.position.set(BUILDINGS[1].x, 0, BUILDINGS[1].z);
     m.traverse(c => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
     G.remove(primShopGrp); G.add(m);
   }).catch(() => {});
@@ -232,28 +236,56 @@ function buildHub() {
 
 /* ---------- the two entrance buildings ---------- */
 function buildGardenGate(G, b) {
-  // bigger floral archway — posts taller + wider
-  [-2.2, 2.2].forEach(s => {
-    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.34, 4.5, 8), lam(0x7ed489));
-    post.position.set(b.x + s, 2.25, b.z); G.add(post);
-  });
-  const arch = new THREE.Mesh(new THREE.TorusGeometry(2.2, 0.28, 8, 18, Math.PI), lam(0x6ecb7d));
-  arch.position.set(b.x, 4.5, b.z); G.add(arch);
-  for (let i = 0; i < 11; i++) {
-    const t = i / 10, ang = Math.PI * t;
-    const fl = new THREE.Mesh(new THREE.SphereGeometry(0.24, 6, 5), lam(choice([0xff8fb7, 0xffd24a, 0xc9a0ff, 0xff7a9c])));
-    fl.position.set(b.x - Math.cos(ang) * 2.2, 4.5 + Math.sin(ang) * 2.2, b.z); G.add(fl);
-  }
-  // vines down the posts
-  [-2.2, 2.2].forEach(s => {
-    for (let i = 0; i < 4; i++) {
-      const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.16, 5, 4), lam(0x5cba6a));
-      leaf.position.set(b.x + s + (i % 2 ? 0.22 : -0.22), 0.9 + i * 0.9, b.z + 0.1); G.add(leaf);
+  const px = b.x, pz = b.z;
+  const GW = 2.6;  // half post-gap
+  const PH = 5.4;  // post height
+
+  // Side hedges — frame the entrance like a garden hedge archway
+  [-GW - 1.3, GW + 1.3].forEach(sx => {
+    const side = sx < 0 ? -1 : 1;
+    const hedge = new THREE.Mesh(new THREE.BoxGeometry(1.8, 2.5, 2.0), lam(0x4cb85a));
+    hedge.position.set(px + sx, 1.25, pz); G.add(hedge);
+    const hTop = new THREE.Mesh(new THREE.SphereGeometry(1.0, 9, 8), lam(0x5cc864));
+    hTop.position.set(px + sx, 2.7, pz); G.add(hTop);
+    for (let fi = 0; fi < 4; fi++) {
+      const hfl = new THREE.Mesh(new THREE.SphereGeometry(0.15, 6, 5),
+        lam(choice([0xff8fb7, 0xffd24a, 0xffffff, 0xffb4d4])));
+      hfl.position.set(px + sx + rand(-0.5, 0.5), 1.4 + rand(0, 1.2), pz + 0.75 * side); G.add(hfl);
     }
   });
-  for (let i = 0; i < 5; i++) makeFlowers(G, b.x - 1.4 + i * 0.7, b.z - 1.5, 3);
-  makeBeacon(G, 0x6ecb7d, b.x, 7.8, b.z);
-  makeFloatingLabel(G, 'The Garden', 0x6ecb7d, b.x, 7.0, b.z);
+
+  // Posts — thick green cylinders with pink sphere caps
+  [-GW, GW].forEach(s => {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.40, PH, 10), lam(0x5cc870));
+    post.position.set(px + s, PH / 2, pz); G.add(post);
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.46, 9, 8), lam(0xff9ec6));
+    cap.position.set(px + s, PH + 0.24, pz); G.add(cap);
+    // Vines
+    for (let i = 0; i < 6; i++) {
+      const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.19, 6, 4), lam(0x3aaa4a));
+      leaf.position.set(px + s + (i % 2 ? 0.32 : -0.32), 0.7 + i * 0.8, pz + 0.12); G.add(leaf);
+    }
+  });
+
+  // Main arch — thick half-torus in XY plane (face-on from south)
+  const arch = new THREE.Mesh(new THREE.TorusGeometry(GW, 0.44, 12, 28, Math.PI), lam(0x48b858));
+  arch.position.set(px, PH, pz); G.add(arch);
+
+  // Flower garland along the arch
+  for (let i = 0; i <= 14; i++) {
+    const t = i / 14, ang = Math.PI * t;
+    const fx = px - Math.cos(ang) * GW, fy = PH + Math.sin(ang) * GW;
+    const r = i === 7 ? 0.32 : 0.22;
+    const fl = new THREE.Mesh(new THREE.SphereGeometry(r, 8, 7),
+      lam(choice([0xff8fb7, 0xffd24a, 0xc9a0ff, 0xff7a9c, 0xffffff, 0xff9ec6])));
+    fl.position.set(fx, fy, pz); G.add(fl);
+  }
+
+  // Ground flower beds fanning out from the gate
+  for (let i = 0; i < 8; i++) makeFlowers(G, px - 2.8 + i * 0.8, pz - 1.8, 3);
+
+  makeBeacon(G, 0x5cc870, px, 9.2, pz);
+  makeFloatingLabel(G, 'The Garden', 0x5cc870, px, 8.2, pz);
 }
 
 function buildShopFront(G, b) {
@@ -473,7 +505,7 @@ function hubProximity() {
   if (S.transitioning) return;
   let near = null;
   for (const b of BUILDINGS) {
-    if (Math.hypot(girl.position.x - b.x, girl.position.z - b.z) < 3.8) { near = b; break; }
+    if (Math.hypot(girl.position.x - b.x, girl.position.z - b.z) < 4.5) { near = b; break; }
   }
   if (near) {
     if (S.hubTarget !== near.key) {
@@ -489,7 +521,7 @@ function hubProximity() {
 
 // called from the main loop while in 'hub' / 'shop' / 'house'
 export function updateOverworld(dt) {
-  if (S.state === 'hub') { walkWorld(dt, O.x, O.z, HUB_R); hubProximity(); }
+  if (S.state === 'hub') { walkWorld(dt, O.x, O.z, HUB_R, HUB_OBSTACLES); hubProximity(); }
   else if (S.state === 'shop') { walkWorld(dt, SHOP_ORIGIN.x, SHOP_ORIGIN.z, SHOP_R, SHOP_OBSTACLES); updateShopProximity(); }
   else if (S.state === 'house') { const wc = S.walkCenter; if (wc) walkWorld(dt, wc.x, wc.z, S.walkR || 3.4, HOUSE_OBSTACLES); }
   // ambient: spinning beacons + floating label bob + shimmering fountain
