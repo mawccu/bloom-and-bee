@@ -23,7 +23,7 @@ import {
 import { UPGRADES, stat } from './upgrades.js';
 import { tone, sfx } from './audio.js';
 import { inputVec, showFixedJoy, hideJoy, keys } from './input.js';
-import { drawMinimap } from './ui.js';
+import { drawMinimap, scheduleCloudSave } from './ui.js';
 
 /* ============================== effect meshes ============================== */
 const guideArrow = (() => {
@@ -410,6 +410,7 @@ export function _doLevelWon(fromUlt) {
   S.best = Math.max(S.best, S.score); store.set('best', S.best);
   S.bestLvl = Math.max(S.bestLvl, S.level); store.set('bestlvl', S.bestLvl);
   S.savedLevel = Math.max(S.savedLevel, S.level + 1); store.set('curlevel', S.savedLevel);
+  scheduleCloudSave(); // back the new progress up to the cloud (debounced, best-effort)
   sfx.win();
   if (!fromUlt) endMalekUlt(); // let ult finish its leave animation on its own
   clearFlowers(true); clearPickups(); crowHide();
@@ -524,6 +525,7 @@ export function renderShop() {
       S.petals -= cost; S.upg[key]++;
       sfx.buy();
       S.hudDirty = true;
+      scheduleCloudSave();
       renderShop();
     });
     grid.appendChild(card);

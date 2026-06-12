@@ -11,6 +11,7 @@ import {
   tapMarker, doSwat, blowKiss,
 } from './gameplay.js';
 import { hideJoy, showFixedJoy, resetStuckInput } from './input.js';
+import { cloudLoad, cloudSave } from './cloud.js';
 
 /* ============================== save / restore ============================== */
 const SAVE_KEYS = PROFILE_DATA_KEYS;
@@ -31,6 +32,81 @@ export function importSave(code) {
     return true;
   } catch(e) { return false; }
 }
+
+/* ============================== cloud sync (Supabase backup) ==============================
+   localStorage stays the instant offline store; the cloud is a durable backup that syncs on
+   top using the SAME save blob (SAVE_KEYS). All cloud calls are best-effort — if they fail
+   (offline / blocked) the game is unaffected and just syncs next time a call succeeds. */
+function getSaveBlob() {
+  const data = {};
+  SAVE_KEYS.forEach(k => { const v = store.get(k, null); if (v !== null) data[k] = v; });
+  return data;
+}
+function applySaveBlob(data) {
+  SAVE_KEYS.forEach(k => { if (data[k] !== undefined) store.set(k, data[k]); });
+}
+const blobLevel = b => Math.max(1, parseInt((b && b.curlevel) || '1', 10) || 1);
+// does the cloud blob carry any value that differs from local for a key it actually defines?
+const cloudBrings = (cloud, local) =>
+  SAVE_KEYS.some(k => cloud[k] !== undefined && String(cloud[k]) !== String(local[k]));
+
+// tiny, non-intrusive "☁️ synced" toast
+let _syncEl = null, _syncTimer = null;
+function showSynced(text = '☁️ synced') {
+  if (!_syncEl) {
+    _syncEl = document.createElement('div');
+    _syncEl.id = 'cloudSync';
+    _syncEl.style.cssText = 'position:fixed;top:10px;left:50%;transform:translateX(-50%);' +
+      'z-index:9999;font:700 13px "Baloo 2",system-ui,sans-serif;color:#fff;' +
+      'background:rgba(60,92,140,.82);padding:5px 14px;border-radius:16px;' +
+      'pointer-events:none;opacity:0;transition:opacity .35s;box-shadow:0 2px 10px rgba(0,0,0,.22)';
+    document.body.appendChild(_syncEl);
+  }
+  _syncEl.textContent = text;
+  _syncEl.style.opacity = '1';
+  clearTimeout(_syncTimer);
+  _syncTimer = setTimeout(() => { _syncEl.style.opacity = '0'; }, 1600);
+}
+
+// Debounced push of the current profile's save to the cloud (coalesces rapid changes).
+let _saveTimer = null;
+export function scheduleCloudSave() {
+  if (!profileId) return; // no profile selected -> nothing to back up
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(async () => {
+    const ok = await cloudSave(profileId, getSaveBlob());
+    if (ok) showSynced();
+  }, 1500);
+}
+
+// On startup (and after a profile code is entered, which reloads): merge cloud <-> local,
+// keeping the more-progressed save (higher saved level; tie -> prefer cloud).
+async function syncProfile() {
+  if (!profileId) return;
+  const cloud = await cloudLoad(profileId);
+  const local = getSaveBlob();
+  if (!cloud) {
+    // cloud empty / unreachable — push local up if there's anything to keep
+    if (Object.keys(local).length) { const ok = await cloudSave(profileId, local); if (ok) showSynced('☁️ backed up'); }
+    return;
+  }
+  if (blobLevel(cloud) >= blobLevel(local)) {
+    if (cloudBrings(cloud, local)) {
+      applySaveBlob(cloud);
+      // reflect adopted progress immediately; reload at the menu so cosmetics/toggles re-init
+      S.savedLevel = blobLevel(getSaveBlob());
+      S.best = +store.get('best', 0); S.bestLvl = +store.get('bestlvl', 0);
+      refreshPlayBtn(); refreshBestLine();
+      showSynced('☁️ restored');
+      if (S.state === 'menu') location.reload();
+    } else {
+      showSynced();
+    }
+  } else {
+    const ok = await cloudSave(profileId, local); if (ok) showSynced('☁️ backed up');
+  }
+}
+syncProfile();
 
 $('saveBtn').addEventListener('click', () => {
   $('saveCodeOut').value = exportSave();
@@ -161,6 +237,7 @@ function buildSwatches(elId, colors, key, mat) {
       wrap.querySelectorAll('.sw').forEach(s => s.classList.remove('sel'));
       d.classList.add('sel');
       initAudio(); sfx.click();
+      scheduleCloudSave();
     });
     wrap.appendChild(d);
   });

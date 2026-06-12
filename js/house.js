@@ -6,6 +6,7 @@ import { burst } from './particles.js';
 import { sfx, initAudio } from './audio.js';
 import { malekSay } from './characters.js';
 import { raycaster } from './input.js';
+import { scheduleCloudSave } from './ui.js';
 
 /* ============================== house interior ============================== */
 const INT_ORIGIN = new THREE.Vector3(0, 0, 300);
@@ -222,6 +223,7 @@ export function tapInterior(clientX, clientY) {
     item.idx = (item.idx + 1) % item.mats.length;
     item.mesh.material = item.mats[item.idx];
     store.set(item.storeKey, item.idx);
+    scheduleCloudSave();
   }
   burst(camera.position.clone().lerp(item.mesh.getWorldPosition(new THREE.Vector3()), 0.6), [0xff9ec6,0xffffff,0xffd24a], 8, 1.4, 1.0, 0.6);
   sfx.buy();
