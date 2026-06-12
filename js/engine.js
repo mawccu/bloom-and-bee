@@ -8,7 +8,7 @@ applyQuality();
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.08;
+renderer.toneMappingExposure = 0.82;
 renderer.domElement.className = 'game3d';
 document.body.appendChild(renderer.domElement);
 
@@ -19,8 +19,8 @@ scene.background = skyTex;
 scene.fog = new THREE.Fog(0xdcf0fb, 55, 160);
 
 export const SKIES = {
-  noon:    { stops: ['#9ed9ff', '#d6f0ff', '#ffeaf5'], fog: 0xdcf0fb, hemi: 0xd8edff, ground: 0xb2dba0 },
-  morning: { stops: ['#ffd2a8', '#ffe9d0', '#fff7ec'], fog: 0xffeeda, hemi: 0xffe9cf, ground: 0xc4dba0 },
+  noon:    { stops: ['#6bbde8', '#a4d8f5', '#f0e8f8'], fog: 0xc8e8f8, hemi: 0xc4e4ff, ground: 0x90c878 },
+  morning: { stops: ['#f0a070', '#fcc89a', '#ffecd8'], fog: 0xffdac8, hemi: 0xffd8b8, ground: 0xa8cc88 },
   sunset:  { stops: ['#ff9fc0', '#ffd0c0', '#ffe8da'], fog: 0xffe0d8, hemi: 0xffd8e2, ground: 0xbcd49c },
   rush:    { stops: ['#ffe18f', '#fff0c0', '#fffae6'], fog: 0xfff2cc, hemi: 0xfff0c0, ground: 0xc8dd9a },
 };
@@ -44,9 +44,9 @@ function fitCamera() {
 addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); fitCamera(); });
 fitCamera();
 
-export const hemiLight = new THREE.HemisphereLight(0xd8edff, 0xb2dba0, 1.6);
+export const hemiLight = new THREE.HemisphereLight(0xd8edff, 0xb2dba0, 1.1);
 scene.add(hemiLight);
-export const sunLight = new THREE.DirectionalLight(0xfff8e8, 2.2);
+export const sunLight = new THREE.DirectionalLight(0xfff8e8, 1.5);
 sunLight.position.set(-14, 26, 10);
 sunLight.castShadow = true;
 sunLight.shadow.mapSize.set(1024, 1024);

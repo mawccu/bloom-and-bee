@@ -57,10 +57,10 @@ export function resolveObstacles(pos, list) {
   }
 }
 
-const bigGround = new THREE.Mesh(new THREE.CircleGeometry(130, 48), lam(0x93d483));
+const bigGround = new THREE.Mesh(new THREE.CircleGeometry(130, 48), lam(0x6aaa58));
 bigGround.rotateX(-Math.PI / 2); bigGround.receiveShadow = true;
 scene.add(bigGround);
-const playDisc = new THREE.Mesh(new THREE.CircleGeometry(FIELD_R + 2.5, 64), lam(0xa9e394));
+const playDisc = new THREE.Mesh(new THREE.CircleGeometry(FIELD_R + 2.5, 64), lam(0x80c46c));
 playDisc.rotation.x = -Math.PI / 2; playDisc.position.y = 0.01; playDisc.receiveShadow = true;
 scene.add(playDisc);
 

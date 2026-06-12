@@ -9,6 +9,7 @@ import { startGame, camFocus } from './gameplay.js';
 import { onEnterShop, onExitShop, updateShopProximity } from './shop.js';
 import { SHOP_OBSTACLES, HOUSE_OBSTACLES, resolveObstacles } from './world.js';
 import { loadModel } from './models.js';
+import { enterHouseInterior } from './house.js';
 
 /* ============================== overworld hub ==============================
    A cute little walkable town square (far from the meadow at origin, the house
@@ -26,10 +27,11 @@ const _svgLeaf  = `<svg viewBox="0 0 24 24" width="16" height="16" fill="current
 const _svgBag   = `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="flex-shrink:0"><path d="M19 6h-2c0-2.76-2.24-5-5-5S7 3.24 7 6H5c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-7-3c1.66 0 3 1.34 3 3H9c0-1.66 1.34-3 3-3zm7 17H5V8h14v12z"/></svg>`;
 const _svgHome  = `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="flex-shrink:0"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>`;
 
-// the two entrances (world coords); buildings sit to the north, she spawns south
+// the three entrances (world coords); buildings sit to the north, she spawns south
 const BUILDINGS = [
-  { key: 'garden', label: _svgLeaf + ' Enter the Garden', x: O.x - 11, z: O.z - 8 },
-  { key: 'shop',   label: _svgBag  + ' Enter the Shop',   x: O.x,      z: O.z - 13 },
+  { key: 'garden', label: _svgLeaf + ' Enter the Garden',      x: O.x - 11, z: O.z - 8  },
+  { key: 'shop',   label: _svgBag  + ' Enter the Shop',        x: O.x,      z: O.z - 13 },
+  { key: 'house',  label: _svgHome + " Enter Ranooma's House", x: O.x + 11, z: O.z - 8  },
 ];
 
 /* ---------- little prop helpers ---------- */
@@ -138,36 +140,25 @@ const beacons = [];
 let fountainWater = null;
 function buildHub() {
   const G = new THREE.Group(); scene.add(G);
-  G.add(new THREE.HemisphereLight(0xeaf6ff, 0xbfe6a8, 1.5));
-  const sun = new THREE.DirectionalLight(0xfff8e8, 1.6);
-  sun.position.set(O.x - 12, 22, O.z + 10);
-  sun.target.position.set(O.x, 0, O.z);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(1024, 1024);
-  sun.shadow.camera.near = 1; sun.shadow.camera.far = 80;
-  sun.shadow.camera.left = -28; sun.shadow.camera.right = 28;
-  sun.shadow.camera.top  =  28; sun.shadow.camera.bottom = -28;
-  sun.shadow.bias = -0.001; sun.shadow.radius = 2;
-  G.add(sun); G.add(sun.target);
 
   // layered ground: big grass disc + a couple of softer patches
-  const ground = new THREE.Mesh(new THREE.CircleGeometry(HUB_R + 9, 56), lam(0x93d483));
+  const ground = new THREE.Mesh(new THREE.CircleGeometry(HUB_R + 9, 56), lam(0x6aaa58));
   ground.rotation.x = -Math.PI / 2; ground.position.set(O.x, 0, O.z);
   ground.receiveShadow = true; G.add(ground);
-  const inner = new THREE.Mesh(new THREE.CircleGeometry(HUB_R + 1, 48), lam(0xa6e394));
+  const inner = new THREE.Mesh(new THREE.CircleGeometry(HUB_R + 1, 48), lam(0x7ec468));
   inner.rotation.x = -Math.PI / 2; inner.position.set(O.x, 0.01, O.z);
   inner.receiveShadow = true; G.add(inner);
-  [[O.x - 7, O.z + 5, 0x9bdc86], [O.x + 8, O.z + 4, 0x8fd47e], [O.x + 2, O.z - 4, 0xa9e89a]].forEach(([px, pz, c]) => {
+  [[O.x - 7, O.z + 5, 0x88cc72], [O.x + 8, O.z + 4, 0x78bc60], [O.x + 2, O.z - 4, 0x90d07a]].forEach(([px, pz, c]) => {
     const patch = new THREE.Mesh(new THREE.CircleGeometry(rand(3, 4.5), 20), lam(c));
     patch.rotation.x = -Math.PI / 2; patch.position.set(px, 0.015, pz);
     patch.receiveShadow = true; G.add(patch);
   });
 
   // central plaza + fountain
-  const plaza = new THREE.Mesh(new THREE.CircleGeometry(4.2, 36), lam(0xe9d9b4));
+  const plaza = new THREE.Mesh(new THREE.CircleGeometry(4.2, 36), lam(0xd4c090));
   plaza.rotation.x = -Math.PI / 2; plaza.position.set(O.x, 0.02, O.z);
   plaza.receiveShadow = true; G.add(plaza);
-  const rim = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.6, 0.55, 20), lam(0xcdd3da));
+  const rim = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.6, 0.55, 20), lam(0xa8b4be));
   rim.position.set(O.x, 0.27, O.z); rim.castShadow = true; rim.receiveShadow = true; G.add(rim);
   fountainWater = new THREE.Mesh(new THREE.CircleGeometry(1.3, 20), new THREE.MeshStandardMaterial({ color: 0x5ac9e8, roughness: 0.05, metalness: 0.3 }));
   fountainWater.rotation.x = -Math.PI / 2; fountainWater.position.set(O.x, 0.5, O.z); G.add(fountainWater);
@@ -214,6 +205,7 @@ function buildHub() {
   buildGardenGate(primGateGrp, BUILDINGS[0]);
   const primShopGrp = new THREE.Group(); G.add(primShopGrp);
   buildShopFront(primShopGrp, BUILDINGS[1]);
+  buildCottage(G, BUILDINGS[2]);
 
   G.traverse(c => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
 
@@ -266,7 +258,7 @@ function buildGardenGate(G, b) {
 
 function buildShopFront(G, b) {
   // bigger shop — 5.2 wide × 3.4 tall × 4.2 deep
-  const base = new THREE.Mesh(new THREE.BoxGeometry(5.2, 3.4, 4.2), lam(0xeaf4ff));
+  const base = new THREE.Mesh(new THREE.BoxGeometry(5.2, 3.4, 4.2), lam(0xc8dff5));
   base.position.set(b.x, 1.7, b.z); G.add(base);
   const roof = new THREE.Mesh(new THREE.BoxGeometry(6.0, 0.52, 4.8), lam(0x5aa8f0));
   roof.position.set(b.x, 3.66, b.z); G.add(roof);
@@ -592,5 +584,6 @@ $('hubPrompt').addEventListener('pointerdown', e => {
   $('hubPrompt').classList.add('hidden'); S.hubTarget = null;
   if (t === 'garden') { fadeTransition(() => startGame(S.savedLevel, true)); }
   else if (t === 'shop') { fadeTransition(() => enterShop()); }
+  else if (t === 'house') { fadeTransition(() => enterHouseInterior()); }
 });
 $('exitBuildingBtn').addEventListener('click', () => exitToHub());
