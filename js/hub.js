@@ -30,17 +30,16 @@ const _svgHome  = `<svg viewBox="0 0 24 24" width="16" height="16" fill="current
 // the three entrances (world coords); buildings sit to the north, she spawns south
 // x-offsets kept to ±7 so all buildings are within the camera FOV from the spawn point
 const BUILDINGS = [
-  { key: 'garden', label: _svgLeaf + ' Enter the Garden',      x: O.x - 7, z: O.z - 9  },
-  { key: 'shop',   label: _svgBag  + ' Enter the Shop',        x: O.x,     z: O.z - 13 },
-  { key: 'house',  label: _svgHome + " Enter Ranooma's House", x: O.x + 7, z: O.z - 9  },
+  { key: 'garden', label: _svgLeaf + ' Enter the Garden',      x: O.x - 11, z: O.z - 12 },
+  { key: 'shop',   label: _svgBag  + ' Enter the Shop',        x: O.x,      z: O.z - 13 },
+  { key: 'house',  label: _svgHome + " Enter Ranooma's House", x: O.x + 11, z: O.z - 12 },
 ];
 
-// Solid collision ellipses for hub buildings + fountain — fed into walkWorld so Ranooma can't walk through them
 const HUB_OBSTACLES = [
-  { x: O.x - 7, z: O.z - 9,  rx: 3.2, rz: 1.4 },  // garden gate (thin along Z, wide along X)
-  { x: O.x,     z: O.z - 13, rx: 3.0, rz: 2.6 },  // shop front
-  { x: O.x + 7, z: O.z - 9,  rx: 2.8, rz: 2.6 },  // ranooma's house
-  { x: O.x,     z: O.z,      rx: 1.9, rz: 1.9 },  // fountain basin
+  { x: O.x - 11, z: O.z - 12, rx: 3.2, rz: 1.4 },  // garden gate
+  { x: O.x,      z: O.z - 13, rx: 3.0, rz: 2.6 },  // shop front
+  { x: O.x + 11, z: O.z - 12, rx: 2.8, rz: 2.6 },  // ranooma's house
+  { x: O.x,      z: O.z,      rx: 1.9, rz: 1.9 },  // fountain
 ];
 
 /* ---------- little prop helpers ---------- */
@@ -215,6 +214,9 @@ function buildHub() {
   // Shop — primitive first, then GLB swap
   const primShopGrp = new THREE.Group(); G.add(primShopGrp);
   buildShopFront(primShopGrp, BUILDINGS[1]);
+  // Shop label/beacon live on G directly so they survive the GLB swap
+  makeBeacon(G, 0x5aa8f0, BUILDINGS[1].x, 6.2, BUILDINGS[1].z);
+  makeFloatingLabel(G, 'The Shop', 0x5aa8f0, BUILDINGS[1].x, 5.5, BUILDINGS[1].z);
   // House — primitive only
   buildCottage(G, BUILDINGS[2]);
 
@@ -230,8 +232,8 @@ function buildHub() {
   // GLB fountain replaces inline primitives
   _swapFountainGLB(G);
 
-  // GLB benches scattered around plaza
-  _addBenchesGLB(G);
+  // Primitive benches around the plaza
+  _makeBenches(G);
 }
 
 /* ---------- the two entrance buildings ---------- */
@@ -240,8 +242,8 @@ function buildGardenGate(G, b) {
   const GW = 2.6;  // half post-gap
   const PH = 5.4;  // post height
 
-  // Side hedges — frame the entrance like a garden hedge archway
-  [-GW - 1.3, GW + 1.3].forEach(sx => {
+  // Outer hedge only (away from shop center) — keeps path to shop visually open
+  [-(GW + 1.3)].forEach(sx => {
     const side = sx < 0 ? -1 : 1;
     const hedge = new THREE.Mesh(new THREE.BoxGeometry(1.8, 2.5, 2.0), lam(0x4cb85a));
     hedge.position.set(px + sx, 1.25, pz); G.add(hedge);
@@ -311,8 +313,6 @@ function buildShopFront(G, b) {
     const glass = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.85, 0.13), std(0xaeeeff, 0.04, 0.15, { transparent: true, opacity: 0.7 }));
     glass.position.set(b.x + x, 2.2, b.z + 2.13); G.add(glass);
   });
-  makeBeacon(G, 0x5aa8f0, b.x, 6.2, b.z);
-  makeFloatingLabel(G, 'The Shop', 0x5aa8f0, b.x, 5.5, b.z);
 }
 
 function buildCottage(G, b) {
@@ -358,17 +358,29 @@ function _swapFountainGLB(G) {
 }
 
 const BENCH_SPOTS = [
-  [O.x - 5, O.z + 3.5], [O.x + 5, O.z + 3.5],
-  [O.x - 3.5, O.z - 5], [O.x + 3.5, O.z - 5],
+  [O.x - 5,   O.z + 3.5, Math.PI],      // south-left  → face north
+  [O.x + 5,   O.z + 3.5, Math.PI],      // south-right → face north
+  [O.x - 3.5, O.z - 5,   0],            // north-left  → face south
+  [O.x + 3.5, O.z - 5,   0],            // north-right → face south
 ];
-function _addBenchesGLB(G) {
-  BENCH_SPOTS.forEach(([bx, bz], i) => {
-    loadModel('bench.glb').then(m => {
-      m.position.set(bx, 0, bz);
-      m.rotation.y = i * Math.PI / 2;
-      m.traverse(c => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
-      G.add(m);
-    }).catch(() => {});
+function _makeBenches(G) {
+  BENCH_SPOTS.forEach(([bx, bz, ry]) => {
+    const bg = new THREE.Group();
+    bg.position.set(bx, 0, bz);
+    bg.rotation.y = ry;
+    // seat
+    const seat = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.13, 0.62), lam(0xc98a4b));
+    seat.position.y = 0.58; bg.add(seat);
+    // back rest
+    const back = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.48, 0.11), lam(0xc98a4b));
+    back.position.set(0, 0.87, -0.27); bg.add(back);
+    // four legs
+    [[-0.82, -0.22], [-0.82, 0.22], [0.82, -0.22], [0.82, 0.22]].forEach(([lx, lz]) => {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.58, 0.11), lam(0xa06838));
+      leg.position.set(lx, 0.29, lz); bg.add(leg);
+    });
+    bg.traverse(c => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
+    G.add(bg);
   });
 }
 
