@@ -379,3 +379,31 @@
   .ach-done .ach-bar { background:linear-gradient(90deg,#9fe6b8,#4da860); }
   .ach-prog { font-size:10.5px; color:#b090c0; font-weight:700; }
   .ach-reward { font-size:11px; font-weight:800; color:#d47a20; }
+
+  /* ---------- SVG icon buttons ---------- */
+  .iBtn { display:flex !important; align-items:center; justify-content:center; color:#fff; }
+  .iBtn svg { pointer-events:none; flex-shrink:0; }
+
+  /* Sound button: SVG icon, muted = cross line added via clip / opacity */
+  #sndBtn, #pauseBtn { width:34px; height:34px; border-radius:50%; border:none; cursor:pointer;
+    background:rgba(255,255,255,.25); backdrop-filter:blur(4px);
+    box-shadow:0 2px 8px rgba(0,0,0,.15); transition:opacity .15s, background .15s; }
+  #sndBtn:active, #pauseBtn:active { background:rgba(255,255,255,.4); transform:scale(.93); }
+  #sndBtn.muted { opacity:.45; }
+
+  /* Action buttons: flex-center their SVG icons */
+  #swatBtn, #sprintBtn, #kissBtn { display:flex; align-items:center; justify-content:center; color:#fff; }
+  #swatBtn svg, #sprintBtn svg, #kissBtn svg { filter:drop-shadow(0 1px 2px rgba(0,0,0,.25)); }
+
+  /* Hub / interior text buttons */
+  #housePrompt, #exitHouseBtn, #exitBuildingBtn, #browseStoreBtn, #decorBtn,
+  #decorRotateBtn, #decorDoneBtn, #hubPrompt {
+    display:inline-flex; align-items:center; gap:5px; }
+  #housePrompt svg, #exitHouseBtn svg, #exitBuildingBtn svg, #browseStoreBtn svg,
+  #decorBtn svg, #decorRotateBtn svg, #decorDoneBtn svg { flex-shrink:0; }
+
+  /* Joystick knob */
+  #joyKnob { display:flex; align-items:center; justify-content:center; }
+
+  /* HUD chip icon alignment */
+  .chip svg { display:inline-block; }

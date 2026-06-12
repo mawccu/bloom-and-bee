@@ -19,7 +19,7 @@ import { setHouseObstacles, resolveObstacles } from './world.js';
    restore on reload. Collision footprints are rebuilt from the live transforms on every move. */
 const INT_OX = 0, INT_OZ = 300;
 const CLAMP = 6.4;            // keep furniture centres inside the walls
-const LIFT  = 0.5;           // how far a picked-up item floats while "held"
+const LIFT  = 1.0;           // how far a picked-up item floats while "held"
 const ROT_STEP = Math.PI / 4; // 45° per rotate tap
 
 // ellipse footprint half-extents (local, un-rotated) + whether it blocks walking
@@ -45,11 +45,24 @@ const FOOT = {
 const DEFAULT_FOOT = { rx: 0.5, rz: 0.5, collide: false };
 const PLACE_LINES = ["Looking amazing! 🛋️✨", "Perfect spot 🥰", "Our cosy little home 💕", "Love what you did there! ✨"];
 
+// Items that can be placed on desk / shelf surfaces (small decorations only)
+const SURFACE_CAPABLE = new Set(['teapot_flower', 'candle_rose', 'cat_plush', 'vase_flowers', 'clock_wall', 'poster_stars']);
+// Surface definitions: dy = top surface y in local-room coords, hw/hd = half-extents of the top face
+const SURFACE_DEF = {
+  desk:  { dy: 0.97, hw: 1.5,  hd: 0.70 },
+  shelf: { dy: 3.65, hw: 1.05, hd: 0.27 },
+};
+
 let interiorGroup = null;
 const movables = {};   // id -> { id, kind, group, foot, label, lines, def:{x,z,rot}, placed }
 let _decorMode  = false;
 let _selectedId = null;   // currently picked-up item
 let _ring = null;          // glowing ring under the held item
+let _ghost = null;         // ghost footprint indicator
+let _ghostItemId = null;
+let _ghostFillMat = null;
+let _ghostEdgeMat = null;
+let _ptrX = 0, _ptrY = 0; // last pointer position
 
 /* ============================== mesh builders ============================== */
 function buildDecorMesh(itemId) {
@@ -204,7 +217,8 @@ function buildDecorMesh(itemId) {
 /* ============================== transforms / persistence ============================== */
 function curTransform(e) {
   const t = S.placedFurniture[e.id];
-  return (t && typeof t === 'object' && 'x' in t) ? t : e.def;
+  if (t && typeof t === 'object' && 'x' in t) return { y: 0, ...t };
+  return { ...e.def, y: 0 };
 }
 function savePlaced() {
   store.set('placedFurniture', JSON.stringify(S.placedFurniture));
@@ -218,6 +232,7 @@ function rebuildCollision() {
     const e = movables[id];
     if (!e.placed || !e.foot.collide) continue;
     const t = curTransform(e);
+    if ((t.y || 0) > 0.5) continue; // surface-mounted items don't block floor movement
     const c = Math.abs(Math.cos(t.rot || 0)), s = Math.abs(Math.sin(t.rot || 0));
     const rx = Math.hypot(e.foot.rx * c, e.foot.rz * s);   // AABB of the rotated ellipse
     const rz = Math.hypot(e.foot.rx * s, e.foot.rz * c);
@@ -241,13 +256,13 @@ function spawnCatalog(id) {
 }
 
 /* ============================== public placement API (UI + tests) ============================== */
-export function placeFurniture(id, lx, lz, rot = 0) {
+export function placeFurniture(id, lx, lz, rot = 0, ly = 0) {
   const e = movables[id] || spawnCatalog(id);
   if (!e) return;
   lx = clamp(lx, -CLAMP, CLAMP); lz = clamp(lz, -CLAMP, CLAMP);
   e.placed = true;
-  S.placedFurniture[id] = { x: lx, z: lz, rot };
-  e.group.position.set(lx, 0, lz);
+  S.placedFurniture[id] = { x: lx, z: lz, rot, y: ly };
+  e.group.position.set(lx, ly, lz);
   e.group.rotation.y = rot;
   savePlaced();
   rebuildCollision();
@@ -279,33 +294,123 @@ function ensureRing() {
 function showRing(e) { ensureRing(); const t = curTransform(e); _ring.position.set(t.x, 0.05, t.z); _ring.visible = true; }
 function hideRing() { if (_ring) _ring.visible = false; }
 
+/* ============================== ghost footprint indicator ============================== */
+function buildGhost(itemId) {
+  if (_ghost) { interiorGroup.remove(_ghost); _ghost = null; }
+  if (!interiorGroup) return;
+  const foot = FOOT[itemId] || DEFAULT_FOOT;
+  const W = foot.rx * 2, D = foot.rz * 2;
+  const G = new THREE.Group();
+
+  _ghostFillMat = new THREE.MeshBasicMaterial({ color: 0xffd24a, transparent: true, opacity: 0.20, depthWrite: false, side: THREE.DoubleSide });
+  const fill = new THREE.Mesh(new THREE.PlaneGeometry(W, D), _ghostFillMat);
+  fill.rotation.x = -Math.PI / 2; fill.position.y = 0.022; G.add(fill);
+
+  _ghostEdgeMat = new THREE.LineBasicMaterial({ color: 0xffd24a });
+  const pts = [
+    new THREE.Vector3(-W / 2, 0, -D / 2), new THREE.Vector3(W / 2, 0, -D / 2),
+    new THREE.Vector3(W / 2, 0,  D / 2),  new THREE.Vector3(-W / 2, 0, D / 2),
+    new THREE.Vector3(-W / 2, 0, -D / 2),
+  ];
+  G.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), _ghostEdgeMat));
+
+  const dotMat = new THREE.MeshBasicMaterial({ color: 0xffd24a });
+  [[-W / 2, -D / 2], [W / 2, -D / 2], [W / 2, D / 2], [-W / 2, D / 2]].forEach(([cx, cz]) => {
+    const dot = new THREE.Mesh(new THREE.CircleGeometry(0.065, 8), dotMat);
+    dot.rotation.x = -Math.PI / 2; dot.position.set(cx, 0.04, cz); G.add(dot);
+  });
+
+  G.visible = false;
+  interiorGroup.add(G);
+  _ghost = G; _ghostItemId = itemId;
+}
+
+function updateGhost() {
+  if (!_selectedId || !interiorGroup) { if (_ghost) _ghost.visible = false; return; }
+  if (_ghostItemId !== _selectedId) buildGhost(_selectedId);
+  if (!_ghost) return;
+  const p = rayTarget(_ptrX, _ptrY);
+  if (!p) { _ghost.visible = false; return; }
+  const lx = clamp(p.x - INT_OX, -CLAMP, CLAMP);
+  const lz = clamp(p.z - INT_OZ, -CLAMP, CLAMP);
+  const e = movables[_selectedId];
+  const t = curTransform(e);
+  _ghost.position.set(lx, p.y || 0, lz);
+  _ghost.rotation.y = t.rot || 0;
+  const col = p.onSurface ? 0x9fe6b8 : 0xffd24a;
+  if (_ghostFillMat) _ghostFillMat.color.setHex(col);
+  if (_ghostEdgeMat) _ghostEdgeMat.color.setHex(col);
+  _ghost.visible = true;
+}
+
+/* ============================== surface detection ============================== */
+function raySurface(cx, cy) {
+  if (!SURFACE_CAPABLE.has(_selectedId)) return null;
+  raycaster.setFromCamera({ x: (cx / innerWidth) * 2 - 1, y: -(cy / innerHeight) * 2 + 1 }, camera);
+  const o = raycaster.ray.origin, d = raycaster.ray.direction;
+  for (const [surfId, def] of Object.entries(SURFACE_DEF)) {
+    const e = movables[surfId];
+    if (!e || !e.placed) continue;
+    const t = curTransform(e);
+    if (Math.abs(d.y) < 1e-6) continue;
+    const tr = (def.dy - o.y) / d.y;
+    if (tr <= 0) continue;
+    const hx = o.x + d.x * tr - (INT_OX + t.x);
+    const hz = o.z + d.z * tr - (INT_OZ + t.z);
+    const cos = Math.cos(-(t.rot || 0)), sin = Math.sin(-(t.rot || 0));
+    const lx = hx * cos - hz * sin, lz = hx * sin + hz * cos;
+    if (Math.abs(lx) <= def.hw && Math.abs(lz) <= def.hd) {
+      return { x: o.x + d.x * tr, z: o.z + d.z * tr, y: def.dy, onSurface: true };
+    }
+  }
+  return null;
+}
+
+function rayTarget(cx, cy) {
+  const sp = raySurface(cx, cy);
+  if (sp) return sp;
+  raycaster.setFromCamera({ x: (cx / innerWidth) * 2 - 1, y: -(cy / innerHeight) * 2 + 1 }, camera);
+  const o = raycaster.ray.origin, d = raycaster.ray.direction;
+  if (Math.abs(d.y) < 1e-6) return null;
+  const t = -o.y / d.y;
+  if (t <= 0) return null;
+  return { x: o.x + d.x * t, z: o.z + d.z * t, y: 0, onSurface: false };
+}
+
 /* ============================== pick up / drop / rotate ============================== */
 function selectItem(id) {
   const e = movables[id];
   if (!e) return;
-  if (_selectedId && _selectedId !== id && movables[_selectedId]) movables[_selectedId].group.position.y = 0;
+  if (_selectedId && _selectedId !== id && movables[_selectedId]) {
+    const pt = curTransform(movables[_selectedId]);
+    movables[_selectedId].group.position.y = pt.y || 0;
+  }
   _selectedId = id;
-  e.group.position.y = LIFT;
-  showRing(e);
+  const t = curTransform(e);
+  e.group.position.y = (t.y || 0) + LIFT;
+  buildGhost(id);
+  updateGhost();
+  if ((t.y || 0) < 0.5) showRing(e); else hideRing();
   $('decorRotateBtn').classList.remove('hidden');
   _rebuildPanel();
   sfx.click();
-  malekSay(null, "Got it! Tap the floor to set it down, 🔄 to rotate ✨");
+  malekSay(null, "Got it! Tap the floor to place it, 🔄 to rotate ✨");
 }
 
-function dropAt(lx, lz) {
+function dropAt(lx, lz, ly = 0) {
   if (!_selectedId) return;
   const id = _selectedId, e = movables[id];
   const wasPlaced = e.placed;
   const t = curTransform(e);
-  placeFurniture(id, lx, lz, t.rot || 0);
-  burst(new THREE.Vector3(INT_OX + clamp(lx, -CLAMP, CLAMP), 0.5, INT_OZ + clamp(lz, -CLAMP, CLAMP)),
+  placeFurniture(id, lx, lz, t.rot || 0, ly);
+  burst(new THREE.Vector3(INT_OX + clamp(lx, -CLAMP, CLAMP), (ly || 0) + 0.5, INT_OZ + clamp(lz, -CLAMP, CLAMP)),
     [0xff9ec6, 0xffffff, 0xffd24a], 10, 1.5, 1.2, 0.7);
   sfx.buy();
   hideRing();
+  if (_ghost) _ghost.visible = false;
   $('decorRotateBtn').classList.add('hidden');
   _selectedId = null;
-  malekSay(null, choice(e.lines || PLACE_LINES));
+  malekSay(null, choice(ly > 0.5 ? ["Cute on the desk! 🥰", "Perfect little touch ✨", "Love it up there! 💕"] : (e.lines || PLACE_LINES)));
   _rebuildPanel();
   if (!wasPlaced) trackStat('decorations', 1);
 }
@@ -315,8 +420,9 @@ function rotateSelected() {
   const e = movables[_selectedId];
   const t = curTransform(e);
   const rot = ((t.rot || 0) + ROT_STEP) % (Math.PI * 2);
-  S.placedFurniture[_selectedId] = { x: t.x, z: t.z, rot };
+  S.placedFurniture[_selectedId] = { x: t.x, z: t.z, rot, y: t.y || 0 };
   e.group.rotation.y = rot;
+  if (_ghost) _ghost.rotation.y = rot;
   savePlaced();
   rebuildCollision();
   sfx.click();
@@ -346,9 +452,10 @@ function pickMovable(cx, cy) {
   return null;
 }
 export function handleDecorTap(clientX, clientY) {
+  _ptrX = clientX; _ptrY = clientY;
   if (_selectedId) {
-    const p = rayFloorPoint(clientX, clientY);
-    if (p) dropAt(p.x - INT_OX, p.z - INT_OZ);
+    const p = rayTarget(clientX, clientY);
+    if (p) dropAt(p.x - INT_OX, p.z - INT_OZ, p.y || 0);
     return;
   }
   const id = pickMovable(clientX, clientY);
@@ -410,8 +517,12 @@ export function enterDecorMode() {
 }
 
 export function exitDecorMode() {
-  if (_selectedId && movables[_selectedId]) movables[_selectedId].group.position.y = 0;
+  if (_selectedId && movables[_selectedId]) {
+    const pt = curTransform(movables[_selectedId]);
+    movables[_selectedId].group.position.y = pt.y || 0;
+  }
   _selectedId = null; hideRing();
+  if (_ghost) _ghost.visible = false;
   _decorMode = false;
   S.insideHouse = false;  // back to walk mode
   $('decorPanel').classList.add('hidden');
@@ -458,7 +569,7 @@ export function initDecor(group, builtinRegs) {
     const e = spawnCatalog(id);
     const t = S.placedFurniture[id];
     e.placed = true;
-    e.group.position.set(t.x, 0, t.z); e.group.rotation.y = t.rot || 0;
+    e.group.position.set(t.x, t.y || 0, t.z); e.group.rotation.y = t.rot || 0;
   });
   rebuildCollision();
 }
@@ -467,3 +578,8 @@ export function initDecor(group, builtinRegs) {
 $('decorBtn').addEventListener('pointerdown',     e => { e.preventDefault(); enterDecorMode(); });
 $('decorDoneBtn').addEventListener('pointerdown',  e => { e.preventDefault(); exitDecorMode(); });
 $('decorRotateBtn').addEventListener('pointerdown', e => { e.preventDefault(); rotateSelected(); });
+
+window.addEventListener('pointermove', e => {
+  _ptrX = e.clientX; _ptrY = e.clientY;
+  if (_selectedId && _decorMode) updateGhost();
+}, { passive: true });

@@ -261,7 +261,7 @@ sprintBtn.addEventListener('pointercancel', sprintUp);
 sprintBtn.addEventListener('pointerleave', sprintUp);
 // kiss: blow a kiss (summons the Malek ultimate when charged)
 $('kissBtn').addEventListener('pointerdown', e => { e.preventDefault(); initAudio(); blowKiss(); });
-function syncSndBtn() { $('sndBtn').textContent = S.soundOn ? '🔊' : '🔇'; }
+function syncSndBtn() { $('sndBtn').classList.toggle('muted', !S.soundOn); }
 $('sndBtn').addEventListener('click', () => {
   S.soundOn = !S.soundOn; store.set('snd', S.soundOn ? '1' : '0');
   syncSndBtn(); syncToggles();
@@ -351,7 +351,9 @@ export function refreshHud() {
     $('petals').textContent = S.petals;
     $('bankPetals').textContent = S.bank.petals;
     $('bankCoins').textContent = S.bank.coins;
-    $('hearts').textContent = '💗'.repeat(Math.max(0, S.hearts)) + '🤍'.repeat(Math.max(0, MAX_HEARTS - S.hearts));
+    const hSVG  = `<svg viewBox="0 0 24 24" width="19" height="19" fill="#ff6fa5"><path d="M12 21.35L10.55 20.03C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>`;
+  const eSVG  = `<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="#e0a0c0" stroke-width="2"><path d="M12 21.35L10.55 20.03C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>`;
+  $('hearts').innerHTML = hSVG.repeat(Math.max(0, S.hearts)) + eSVG.repeat(Math.max(0, MAX_HEARTS - S.hearts));
     S.hudDirty = false;
   }
   const frac = Math.max(0, Math.min(1, S.timeLeft / S.timeMax));
@@ -370,7 +372,6 @@ export function refreshHud() {
   const spb = $('sprintBtn');
   spb.classList.toggle('tired', S.exhausted);
   spb.classList.toggle('go', S.sprinting);
-  spb.textContent = S.exhausted ? '😮‍💨' : '💨';
   // Malek ultimate charge
   const ready = S.malekCharge >= 1;
   $('malekPct').textContent = ready ? 'READY!' : Math.round(S.malekCharge * 100) + '%';

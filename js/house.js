@@ -36,14 +36,18 @@ function buildInterior() {
   scene.add(G);
   const regs = []; // movable built-in furniture registered with the decor system
 
-  G.add(new THREE.HemisphereLight(0xfff2e4, 0xd49040, 1.6));
-  const lamp = new THREE.PointLight(0xffe8b0, 1.8, 30);
-  lamp.position.set(0, 4.0, 0); G.add(lamp);
-  // Corner lights for a bigger room
-  [[-5,4,-5],[5,4,-5]].forEach(([x,y,z]) => {
-    const pl = new THREE.PointLight(0xffe0b0, 1.0, 14);
+  G.add(new THREE.HemisphereLight(0xfff5ea, 0xe0c898, 1.3));
+  // Main overhead lamp — warm and bright
+  const mainLamp = new THREE.PointLight(0xffe8b0, 2.2, 38);
+  mainLamp.position.set(0, 4.2, 0); G.add(mainLamp);
+  // Four corner fills — subtle, warm-tinted
+  [[-6,3.8,-6],[6,3.8,-6],[-6,3.8,6],[6,3.8,6]].forEach(([x,y,z]) => {
+    const pl = new THREE.PointLight(0xfff0d8, 0.75, 13);
     pl.position.set(x, y, z); G.add(pl);
   });
+  // Soft blue-white window fill (daylight coming through the back window)
+  const winFill = new THREE.PointLight(0xd0eeff, 0.65, 22);
+  winFill.position.set(0, 3.2, -7); G.add(winFill);
 
   // Floor — warm hardwood, 16×16
   const floorMat = lam(0xb06a30);
