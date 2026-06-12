@@ -8,8 +8,8 @@ import { scheduleCloudSave } from './ui.js';
 /* ============================== shop NPC constants ==============================
    SHOP_ORIGIN = (-300, 0, 220) — matches hub.js. Malek stands behind the counter
    which sits at z=216 (SHOP_ORIGIN.z - 4). He faces +Z toward the player entry. */
-const NPC_X = -300, NPC_Z = 215.5;
-const BROWSE_DIST = 4.0;
+const NPC_X = -300, NPC_Z = 212.5;   // behind the wider counter at SHOP_ORIGIN.z - 7.5
+const BROWSE_DIST = 5.5;
 
 /* ============================== NPC enter / exit ============================== */
 export function onEnterShop() {

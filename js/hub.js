@@ -16,7 +16,7 @@ import { onEnterShop, onExitShop, updateShopProximity } from './shop.js';
 const HUB_ORIGIN = new THREE.Vector3(-300, 0, 0);
 const HUB_R = 18;
 const SHOP_ORIGIN = new THREE.Vector3(-300, 0, 220);
-const SHOP_R = 6;
+const SHOP_R = 9;
 const WALK_SPEED = 7;
 const O = HUB_ORIGIN;
 
@@ -78,26 +78,32 @@ function makePath(G, x1, z1, x2, z2, w = 1.7) {
 /* -------- 3-D floating canvas-sprite name label -------- */
 const floatingLabels = [];
 function makeFloatingLabel(G, text, color, x, baseY, z) {
-  const W = 320, H = 80;
+  const W = 480, H = 96;
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
   const ctx = cv.getContext('2d');
-  // pill shadow
-  ctx.shadowColor = 'rgba(160,90,140,0.35)'; ctx.shadowBlur = 14;
-  ctx.fillStyle = 'rgba(255,255,255,0.95)';
-  ctx.beginPath(); ctx.roundRect(8, 8, W - 16, H - 16, 22); ctx.fill();
+  // pill background
+  ctx.shadowColor = 'rgba(160,90,140,0.38)'; ctx.shadowBlur = 18;
+  ctx.fillStyle = 'rgba(255,255,255,0.97)';
+  ctx.beginPath(); ctx.roundRect(8, 8, W - 16, H - 16, 26); ctx.fill();
   ctx.shadowBlur = 0;
   // colour top stripe
   ctx.fillStyle = '#' + color.toString(16).padStart(6, '0');
-  ctx.beginPath(); ctx.roundRect(8, 8, W - 16, 14, [22, 22, 0, 0]); ctx.fill();
-  // label text
-  ctx.font = 'bold 34px "Baloo 2", system-ui, sans-serif';
+  ctx.beginPath(); ctx.roundRect(8, 8, W - 16, 16, [26, 26, 0, 0]); ctx.fill();
+  // auto-fit text so nothing clips
+  let fs = 38;
+  ctx.font = `bold ${fs}px "Baloo 2", system-ui, sans-serif`;
+  while (ctx.measureText(text).width > W - 52 && fs > 20) {
+    fs -= 2;
+    ctx.font = `bold ${fs}px "Baloo 2", system-ui, sans-serif`;
+  }
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#6d3f62';
-  ctx.fillText(text, W / 2, H / 2 + 6);
+  ctx.fillText(text, W / 2, H / 2 + 9);
   const tex = new THREE.CanvasTexture(cv);
   const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, fog: false });
   const sprite = new THREE.Sprite(mat);
-  sprite.scale.set(4.6, 1.15, 1);
+  // keep aspect ratio: sprite width/height = W/H
+  sprite.scale.set(5.0, 5.0 * H / W, 1);
   sprite.position.set(x, baseY, z);
   sprite.userData.baseY = baseY;
   G.add(sprite); floatingLabels.push(sprite);
@@ -265,27 +271,107 @@ function buildCottage(G, b) {
 }
 buildHub();
 
-/* ---------- a tiny placeholder shop room (Phase 3 fills it with Malek + catalog) ---------- */
+/* ---------- shop room interior ---------- */
 function buildShopRoom() {
   const G = new THREE.Group(); scene.add(G);
-  G.add(new THREE.HemisphereLight(0xfff2e4, 0xd0b0ff, 1.5));
-  const floor = new THREE.Mesh(new THREE.BoxGeometry(14, 0.2, 14), lam(0xe9dcc0));
+  G.add(new THREE.HemisphereLight(0xfff2e4, 0xd0b0ff, 1.6));
+  // warm overhead point lights
+  [-5, 5].forEach(ox => {
+    const pl = new THREE.PointLight(0xffe0b0, 1.2, 18);
+    pl.position.set(SHOP_ORIGIN.x + ox, 4.8, SHOP_ORIGIN.z - 3);
+    G.add(pl);
+  });
+
+  // Floor — cream tiles
+  const floor = new THREE.Mesh(new THREE.BoxGeometry(20, 0.2, 20), lam(0xf0e6ce));
   floor.position.set(SHOP_ORIGIN.x, -0.1, SHOP_ORIGIN.z); G.add(floor);
+  // Tile grout lines
+  for (let i = -4; i <= 4; i++) {
+    const gr = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.21, 20), lam(0xd8cbb0));
+    gr.position.set(SHOP_ORIGIN.x + i * 2.2, 0, SHOP_ORIGIN.z); G.add(gr);
+    const gz = new THREE.Mesh(new THREE.BoxGeometry(20, 0.21, 0.04), lam(0xd8cbb0));
+    gz.position.set(SHOP_ORIGIN.x, 0, SHOP_ORIGIN.z + i * 2.2); G.add(gz);
+  }
+
+  // Walls
   const wMat = lam(0xfdf0ff);
   const wall = (w, h, d, x, y, z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wMat); m.position.set(SHOP_ORIGIN.x + x, y, SHOP_ORIGIN.z + z); G.add(m); };
-  wall(14, 4, 0.3, 0, 2, -7); wall(0.3, 4, 14, -7, 2, 0); wall(0.3, 4, 14, 7, 2, 0);
-  const counter = new THREE.Mesh(new THREE.BoxGeometry(5, 1.1, 1.6), lam(0xb87340));
-  counter.position.set(SHOP_ORIGIN.x, 0.55, SHOP_ORIGIN.z - 4); G.add(counter);
-  const reg = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.7, 0.7), lam(0xff7a8c));
-  reg.position.set(SHOP_ORIGIN.x + 1.4, 1.45, SHOP_ORIGIN.z - 4); G.add(reg);
+  wall(20, 5.5, 0.35,  0, 2.75, -10);   // back
+  wall(0.35, 5.5, 20, -10, 2.75,  0);   // left
+  wall(0.35, 5.5, 20,  10, 2.75,  0);   // right
+  // Baseboard trim
+  wall(20, 0.22, 0.2,  0, 0.11, -9.85);
+  wall(0.2, 0.22, 20, -9.85, 0.11, 0);
+  wall(0.2, 0.22, 20,  9.85, 0.11, 0);
+  // Wall colour stripe
+  wall(20, 0.4, 0.3,  0, 4.5, -9.85);
+  wall(0.3, 0.4, 20, -9.85, 4.5, 0);
+  wall(0.3, 0.4, 20,  9.85, 4.5, 0);
+
+  // Counter (wide, further north)
+  const ctr = new THREE.Mesh(new THREE.BoxGeometry(8, 1.2, 2.0), lam(0xb87340));
+  ctr.position.set(SHOP_ORIGIN.x, 0.6, SHOP_ORIGIN.z - 6); G.add(ctr);
+  // Counter top slab
+  const ctrTop = new THREE.Mesh(new THREE.BoxGeometry(8.4, 0.14, 2.4), lam(0xd4a060));
+  ctrTop.position.set(SHOP_ORIGIN.x, 1.27, SHOP_ORIGIN.z - 6); G.add(ctrTop);
+  // Register
+  const reg = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.8, 0.8), lam(0xff7a8c));
+  reg.position.set(SHOP_ORIGIN.x + 2.4, 1.67, SHOP_ORIGIN.z - 6); G.add(reg);
+  const regScr = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.5, 0.1), bas(0x3a4050));
+  regScr.position.set(SHOP_ORIGIN.x + 2.4, 2.08, SHOP_ORIGIN.z - 5.55); G.add(regScr);
+  // Flowers on counter
+  for (let fx = -2; fx <= 2; fx += 2) {
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.3, 6), lam(0x5cba6a));
+    stem.position.set(SHOP_ORIGIN.x + fx, 1.55, SHOP_ORIGIN.z - 5.2); G.add(stem);
+    const fl = new THREE.Mesh(new THREE.SphereGeometry(0.1, 7, 6), lam(choice([0xff8fb7, 0xffd24a, 0xc9a0ff])));
+    fl.position.set(SHOP_ORIGIN.x + fx, 1.72, SHOP_ORIGIN.z - 5.2); G.add(fl);
+  }
+
+  // Side shelves — tall, full of items
+  const itemCols = [0xff8fb7, 0xffd24a, 0x8fc9ff, 0x9fe6b8, 0xc9a0ff, 0xff9430];
   for (let s = -1; s <= 1; s += 2) {
-    const shelf = new THREE.Mesh(new THREE.BoxGeometry(0.6, 2.4, 4), lam(0xc9a0ff));
-    shelf.position.set(SHOP_ORIGIN.x + s * 5.5, 1.2, SHOP_ORIGIN.z - 1); G.add(shelf);
-    for (let i = 0; i < 4; i++) {
-      const g = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), lam([0xff8fb7, 0xffd24a, 0x8fc9ff, 0x9fe6b8][i]));
-      g.position.set(SHOP_ORIGIN.x + s * 5.3, 0.8 + i * 0.55, SHOP_ORIGIN.z - 2 + (i % 2) * 1.4); G.add(g);
+    // Shelf unit back panel
+    const back = new THREE.Mesh(new THREE.BoxGeometry(0.3, 4.2, 9), lam(0xc9a0ff));
+    back.position.set(SHOP_ORIGIN.x + s * 8.7, 2.1, SHOP_ORIGIN.z - 1.5); G.add(back);
+    // Three shelf boards
+    for (let row = 0; row < 4; row++) {
+      const sb = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.1, 9), lam(0xb08fd8));
+      sb.position.set(SHOP_ORIGIN.x + s * 8.35, 0.6 + row * 1.0, SHOP_ORIGIN.z - 1.5); G.add(sb);
+      // Items on each shelf
+      for (let col = -3; col <= 3; col++) {
+        if (Math.random() < 0.7) {
+          const gi = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.52, 0.52), lam(itemCols[(row * 4 + col + 6) % itemCols.length]));
+          gi.position.set(SHOP_ORIGIN.x + s * 8.0, 0.92 + row * 1.0, SHOP_ORIGIN.z - 1.5 + col * 1.2); G.add(gi);
+        }
+      }
     }
   }
+
+  // Back wall display — hanging items
+  for (let hx = -3; hx <= 3; hx += 2) {
+    const hook = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.4, 0.06), lam(0xb87340));
+    hook.position.set(SHOP_ORIGIN.x + hx, 4.0, SHOP_ORIGIN.z - 9.7); G.add(hook);
+    const hang = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.65, 0.1), lam(itemCols[(hx + 4) % itemCols.length]));
+    hang.position.set(SHOP_ORIGIN.x + hx, 3.45, SHOP_ORIGIN.z - 9.7); G.add(hang);
+  }
+
+  // Decorative back wall sign
+  const sign = new THREE.Mesh(new THREE.BoxGeometry(5, 1.1, 0.14), lam(0xffd24a));
+  sign.position.set(SHOP_ORIGIN.x, 3.0, SHOP_ORIGIN.z - 9.82); G.add(sign);
+  const signInner = new THREE.Mesh(new THREE.BoxGeometry(4.6, 0.7, 0.1), lam(0xff9ec6));
+  signInner.position.set(SHOP_ORIGIN.x, 3.0, SHOP_ORIGIN.z - 9.76); G.add(signInner);
+
+  // Ceiling lamp fixtures
+  for (let lx = -4; lx <= 4; lx += 4) {
+    const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.7, 7), lam(0xb0a090));
+    rod.position.set(SHOP_ORIGIN.x + lx, 5.15, SHOP_ORIGIN.z - 2); G.add(rod);
+    const shade = new THREE.Mesh(new THREE.ConeGeometry(0.35, 0.4, 10, 1, true), lam(0xffd24a, { side: THREE.DoubleSide }));
+    shade.position.set(SHOP_ORIGIN.x + lx, 4.58, SHOP_ORIGIN.z - 2); G.add(shade);
+  }
+
+  // Entry mat
+  const mat = new THREE.Mesh(new THREE.BoxGeometry(3, 0.07, 1.8), lam(0xff9ec6));
+  mat.position.set(SHOP_ORIGIN.x, 0.04, SHOP_ORIGIN.z + 7.5); G.add(mat);
 }
 buildShopRoom();
 
@@ -394,7 +480,7 @@ export function enterShop() {
   S.autoWalk = null;
   S.tapTarget = null;
   S.walkCenter = { x: SHOP_ORIGIN.x, z: SHOP_ORIGIN.z }; S.walkR = SHOP_R;
-  girl.position.set(SHOP_ORIGIN.x, 0, SHOP_ORIGIN.z + 3); girl.rotation.y = Math.PI; girl.visible = true;
+  girl.position.set(SHOP_ORIGIN.x, 0, SHOP_ORIGIN.z + 6); girl.rotation.y = Math.PI; girl.visible = true;
   camFocus.copy(girl.position);
   $('hubPrompt').classList.add('hidden'); S.hubTarget = null;
   $('hud2').classList.remove('hidden');
