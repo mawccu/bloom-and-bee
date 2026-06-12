@@ -6,9 +6,9 @@ import { girl, girlRefs } from './characters.js';
 import { sfx, initAudio } from './audio.js';
 import { inputVec, hideJoy, showFixedJoy } from './input.js';
 import { startGame, camFocus } from './gameplay.js';
-import { enterHouseInterior } from './house.js';
 import { onEnterShop, onExitShop, updateShopProximity } from './shop.js';
 import { SHOP_OBSTACLES, HOUSE_OBSTACLES, resolveObstacles } from './world.js';
+import { loadModel } from './models.js';
 
 /* ============================== overworld hub ==============================
    A cute little walkable town square (far from the meadow at origin, the house
@@ -26,13 +26,11 @@ const _svgLeaf  = `<svg viewBox="0 0 24 24" width="16" height="16" fill="current
 const _svgBag   = `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="flex-shrink:0"><path d="M19 6h-2c0-2.76-2.24-5-5-5S7 3.24 7 6H5c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-7-3c1.66 0 3 1.34 3 3H9c0-1.66 1.34-3 3-3zm7 17H5V8h14v12z"/></svg>`;
 const _svgHome  = `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="flex-shrink:0"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>`;
 
-// the three entrances (world coords); buildings sit to the north, she spawns south
+// the two entrances (world coords); buildings sit to the north, she spawns south
 const BUILDINGS = [
-  { key: 'meadow', label: _svgLeaf + ' Enter the Garden', x: O.x - 11, z: O.z - 8 },
+  { key: 'garden', label: _svgLeaf + ' Enter the Garden', x: O.x - 11, z: O.z - 8 },
   { key: 'shop',   label: _svgBag  + ' Enter the Shop',   x: O.x,      z: O.z - 13 },
-  { key: 'house',  label: _svgHome + ' Enter the House',  x: O.x + 11, z: O.z - 8 },
 ];
-const HOUSE = BUILDINGS[2];
 
 /* ---------- little prop helpers ---------- */
 function makeTree(G, x, z, s = 1) {
@@ -211,14 +209,37 @@ function buildHub() {
     makeTree(G, O.x + Math.cos(a) * (HUB_R + 4), O.z + Math.sin(a) * (HUB_R + 4), rand(1.0, 1.6));
   }
 
-  buildMeadowGate(G, BUILDINGS[0]);
-  buildShopFront(G, BUILDINGS[1]);
-  buildCottage(G, BUILDINGS[2]);
-  G.traverse(c => { if (c.isMesh) c.castShadow = true; });
+  // Primitive fallbacks — show immediately while GLBs load
+  const primGateGrp = new THREE.Group(); G.add(primGateGrp);
+  buildGardenGate(primGateGrp, BUILDINGS[0]);
+  const primShopGrp = new THREE.Group(); G.add(primShopGrp);
+  buildShopFront(primShopGrp, BUILDINGS[1]);
+
+  G.traverse(c => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
+
+  // Progressive GLB upgrades — swap in when loaded
+  const b0 = BUILDINGS[0], b1 = BUILDINGS[1];
+  loadModel('garden_gate.glb').then(m => {
+    m.position.set(b0.x, 0, b0.z);
+    m.traverse(c => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
+    G.remove(primGateGrp); G.add(m);
+  }).catch(() => {});
+
+  loadModel('shop_front.glb').then(m => {
+    m.position.set(b1.x, 0, b1.z);
+    m.traverse(c => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
+    G.remove(primShopGrp); G.add(m);
+  }).catch(() => {});
+
+  // GLB fountain replaces inline primitives
+  _swapFountainGLB(G);
+
+  // GLB benches scattered around plaza
+  _addBenchesGLB(G);
 }
 
-/* ---------- the three entrance buildings ---------- */
-function buildMeadowGate(G, b) {
+/* ---------- the two entrance buildings ---------- */
+function buildGardenGate(G, b) {
   // bigger floral archway — posts taller + wider
   [-2.2, 2.2].forEach(s => {
     const post = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.34, 4.5, 8), lam(0x7ed489));
@@ -299,6 +320,32 @@ function buildCottage(G, b) {
   });
   makeBeacon(G, 0xff9ec6, b.x, 8.2, b.z);
   makeFloatingLabel(G, "Ranooma's House", 0xff9ec6, b.x, 7.5, b.z);
+}
+
+/* ---------- GLB swap helpers ---------- */
+function _swapFountainGLB(G) {
+  loadModel('fountain.glb').then(m => {
+    m.position.set(O.x, 0, O.z);
+    m.traverse(c => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
+    // hide primitive fountain parts tracked by fountainWater
+    if (fountainWater) { fountainWater.visible = false; }
+    G.add(m);
+  }).catch(() => {});
+}
+
+const BENCH_SPOTS = [
+  [O.x - 5, O.z + 3.5], [O.x + 5, O.z + 3.5],
+  [O.x - 3.5, O.z - 5], [O.x + 3.5, O.z - 5],
+];
+function _addBenchesGLB(G) {
+  BENCH_SPOTS.forEach(([bx, bz], i) => {
+    loadModel('bench.glb').then(m => {
+      m.position.set(bx, 0, bz);
+      m.rotation.y = i * Math.PI / 2;
+      m.traverse(c => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
+      G.add(m);
+    }).catch(() => {});
+  });
 }
 
 buildHub();
@@ -543,12 +590,7 @@ $('hubPrompt').addEventListener('pointerdown', e => {
   e.preventDefault(); initAudio();
   const t = S.hubTarget;
   $('hubPrompt').classList.add('hidden'); S.hubTarget = null;
-  if (t === 'meadow') { fadeTransition(() => startGame(S.savedLevel, true)); }
+  if (t === 'garden') { fadeTransition(() => startGame(S.savedLevel, true)); }
   else if (t === 'shop') { fadeTransition(() => enterShop()); }
-  else if (t === 'house') {
-    S.autoWalk = { x: HOUSE.x, z: HOUSE.z + 1.4 };
-    sfx.click();
-    fadeTransition(() => { S.autoWalk = null; enterHouseInterior(); });
-  }
 });
 $('exitBuildingBtn').addEventListener('click', () => exitToHub());
