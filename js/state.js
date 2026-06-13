@@ -34,7 +34,7 @@ export const SPRINT_MULT = 1.7, STAM_DRAIN = 1 / 2.6, STAM_REGEN = 1 / 4.2, STAM
    everywhere (plain exported `let` reassignments don't cross module boundaries). */
 export const S = {
   // quality / audio toggles
-  hdOn: store.get('hd', '1') === '1',
+  hdOn: store.get('hd', '0') === '1',
   AC: null,
   soundOn: store.get('snd', '1') === '1',
   chimesOn: store.get('chime', '1') === '1',

@@ -4,11 +4,16 @@ import { scene, camera } from './engine.js';
 
 /* ============================== particles ============================== */
 const PARTS = [];
+let _partFree = 0;
 const partGeo = new THREE.OctahedronGeometry(0.07, 0);
 export function burst(pos, colors, n = 10, spd = 2.4, up = 1.4, life = 0.7, size = 1) {
   const palette = Array.isArray(colors) ? colors : [colors];
   for (let i = 0; i < n; i++) {
-    let p = PARTS.find(p => !p.active);
+    let p = null;
+    for (let j = 0; j < PARTS.length; j++) {
+      const idx = (_partFree + j) % PARTS.length;
+      if (!PARTS[idx].active) { p = PARTS[idx]; _partFree = (idx + 1) % PARTS.length; break; }
+    }
     if (!p) {
       if (PARTS.length > 120) return;
       p = { mesh: new THREE.Mesh(partGeo, bas(0xffffff, { transparent: true })), active: false, vel: new THREE.Vector3(), life: 0, maxLife: 1 };

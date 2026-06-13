@@ -165,9 +165,9 @@ export function updateMalekUlt(dt) {
     const ease = k * k * (3 - 2 * k);
     setCarryArms(mc, ease);
     // girl rises off the ground, upright, snug against his front, facing the way he faces
-    const fwd = new THREE.Vector3(Math.sin(mc.g.rotation.y), 0, Math.cos(mc.g.rotation.y));
-    girl.position.x += (mc.g.position.x + fwd.x * 0.4 - girl.position.x) * Math.min(1, dt * 9);
-    girl.position.z += (mc.g.position.z + fwd.z * 0.4 - girl.position.z) * Math.min(1, dt * 9);
+    tmpA.set(Math.sin(mc.g.rotation.y), 0, Math.cos(mc.g.rotation.y));
+    girl.position.x += (mc.g.position.x + tmpA.x * 0.4 - girl.position.x) * Math.min(1, dt * 9);
+    girl.position.z += (mc.g.position.z + tmpA.z * 0.4 - girl.position.z) * Math.min(1, dt * 9);
     girl.position.y = ease * 0.55;
     girl.rotation.x = 0; girl.rotation.z = 0;
     girl.rotation.y = mc.g.rotation.y;
@@ -210,17 +210,17 @@ export function updateMalekUlt(dt) {
     }
 
     // girl rides upright, tucked against Malek's front, facing the way he runs
-    const fwd = new THREE.Vector3(Math.sin(mc.g.rotation.y), 0, Math.cos(mc.g.rotation.y));
-    girl.position.x = mc.g.position.x + fwd.x * 0.4;
+    tmpA.set(Math.sin(mc.g.rotation.y), 0, Math.cos(mc.g.rotation.y));
+    girl.position.x = mc.g.position.x + tmpA.x * 0.4;
     girl.position.y = mc.g.position.y + 0.5;
-    girl.position.z = mc.g.position.z + fwd.z * 0.4;
+    girl.position.z = mc.g.position.z + tmpA.z * 0.4;
     girl.rotation.x = 0; girl.rotation.z = 0;
     girl.rotation.y = mc.g.rotation.y;
     relaxGirlLimbs(dt);
 
     // heart trail
     if (Math.random() < dt * 5)
-      burst(girl.position.clone(), [0xff6fa5, 0xff9ec6, 0xffffff], 2, 1.4, 1.8, 0.5, 0.6);
+      burst(tmpA.copy(girl.position), [0xff6fa5, 0xff9ec6, 0xffffff], 2, 1.4, 1.8, 0.5, 0.6);
 
     if (!S._carryTarget) { S.ultPhase = 'kiss'; S.ultT = 0; }
     return;
@@ -252,11 +252,11 @@ export function updateMalekUlt(dt) {
 
     // continuous heart burst
     if (Math.random() < dt * 9) {
-      const hp = new THREE.Vector3(
+      tmpA.set(
         (mc.g.position.x + girl.position.x) * 0.5,
         1.9 + Math.random() * 0.6,
         (mc.g.position.z + girl.position.z) * 0.5);
-      burst(hp, [0xff4488, 0xff9ec6, 0xffa0cc, 0xffffff], 3, 1.6, 2.4, 0.9, 0.7);
+      burst(tmpA, [0xff4488, 0xff9ec6, 0xffa0cc, 0xffffff], 3, 1.6, 2.4, 0.9, 0.7);
     }
 
     // 💋 pop at the moment of the kiss
@@ -707,7 +707,7 @@ export function gameplay(dt) {
     girl.position.x += ix * sp * dt;
     girl.position.z += iy * sp * dt;
     if (S.sprinting && Math.random() < dt * 18)
-      burst(girl.position.clone().setY(0.2), [0xffffff, 0xd0f0ff], 1, 0.9, 0.7, 0.4, 0.7);
+      burst(tmpA.copy(girl.position).setY(0.2), [0xffffff, 0xd0f0ff], 1, 0.9, 0.7, 0.4, 0.7);
     const pr = Math.hypot(girl.position.x, girl.position.z);
     if (pr > FIELD_R) { girl.position.x *= FIELD_R / pr; girl.position.z *= FIELD_R / pr; }
     const ob = inObstacle(girl.position.x, girl.position.z);
@@ -719,7 +719,7 @@ export function gameplay(dt) {
     girl.rotation.y = lerpAngle(girl.rotation.y, target, 1 - Math.exp(-12 * dt));
     S.walkT += dt * (4 + 6 * Math.min(ilen, 1));
     if (S.boostT > 0 && Math.random() < dt * 14)
-      burst(girl.position.clone().setY(0.25), [0xa0e8a0, 0x4fae5c], 1, 0.8, 0.8, 0.45, 0.7);
+      burst(tmpA.copy(girl.position).setY(0.25), [0xa0e8a0, 0x4fae5c], 1, 0.8, 0.8, 0.45, 0.7);
   } else if (S.gameT - S.lastMoveT > 8 && !S.idleWarned && S.state === 'playing') {
     S.idleWarned = true;
     malekSay(null, "Ranoomaaa, you there? The flowers miss you (me too) 🥺");

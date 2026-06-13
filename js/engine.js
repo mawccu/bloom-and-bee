@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { S } from './state.js';
 
 /* ============================== renderer / scene ============================== */
-export const renderer = new THREE.WebGLRenderer({ antialias: true });
+const isMobile = !!window.cordova || /Android/i.test(navigator.userAgent);
+export const renderer = new THREE.WebGLRenderer({ antialias: !isMobile });
 export function applyQuality() { renderer.setPixelRatio(S.hdOn ? Math.min(devicePixelRatio, 2) : 1); renderer.setSize(innerWidth, innerHeight); }
 applyQuality();
 renderer.shadowMap.enabled = true;
@@ -49,7 +50,7 @@ scene.add(hemiLight);
 export const sunLight = new THREE.DirectionalLight(0xfff8e8, 1.5);
 sunLight.position.set(-14, 26, 10);
 sunLight.castShadow = true;
-sunLight.shadow.mapSize.set(1024, 1024);
+sunLight.shadow.mapSize.set(isMobile ? 512 : 1024, isMobile ? 512 : 1024);
 sunLight.shadow.camera.near = 1;
 sunLight.shadow.camera.far = 130;
 sunLight.shadow.camera.left   = -55;
